@@ -26,12 +26,12 @@ npm install -D vite-plugin-triggerkit
 
 ```typescript
 import { sveltekit } from '@sveltejs/kit/vite';
-import { trigger } from 'vite-plugin-triggerkit';
+import { triggerkit } from 'vite-plugin-triggerkit';
 
 export default defineConfig({
   plugins: [
     sveltekit(),
-    trigger({
+    triggerkit({
       includeDirs: ['src/lib', 'src/routes/api']
     })
   ]

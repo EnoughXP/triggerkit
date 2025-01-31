@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest"
+    "test": "vitest",
+    "analyze": "tsup --config tsup.config.ts --config analyzeConfig"
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
@@ -42,6 +43,7 @@
     "prettier": "^3.4.2",
     "prettier-plugin-svelte": "^3.3.3",
     "publint": "^0.3.2",
+    "rollup-plugin-visualizer": "^5.14.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "tsup": "^8.3.6",
