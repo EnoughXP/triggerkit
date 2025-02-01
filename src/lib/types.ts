@@ -3,7 +3,7 @@ import type { TSESTree } from '@typescript-eslint/types';
 export interface PluginOptions {
   /**
    * Directories to scan for exportable functions
-   * @default ['src/lib', 'src/routes/api']
+   * Default ['src/lib', 'src/routes/api']
    */
   includeDirs?: string[];
 
