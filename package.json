@@ -1,30 +1,38 @@
 {
   "name": "vite-plugin-triggerkit",
-  "version": "1.0.0",
-  "type": "module",
-  "main": "dist/index.js",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "!dist/**/*.test.*",
-    "!dist/**/*.spec.*"
+  "version": "1.0.1",
+  "description": "A vite plugin to connect sveltekit functions in your trigger.dev tasks",
+  "keywords": [
+    "svelte",
+    "trigger.dev"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EnoughXP/vite-plugin-triggerkit.git"
+  },
+  "license": "MIT",
+  "author": "Jason Gutierrez",
+  "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "svelte": "./dist/index.js"
+      "import": "./dist/index.js"
+    },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "import": "./dist/utils/index.js"
     }
   },
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest",
-    "analyze": "tsup --config tsup.config.ts --config analyzeConfig"
-  },
+  "svelte": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "peerDependencies": {
     "svelte": "^5.0.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "@typescript-eslint/typescript-estree": "^7.0.0",
+    "@typescript-eslint/types": "^7.0.0"
   },
   "devDependencies": {
     "@eslint/compat": "^1.2.5",
@@ -34,13 +42,12 @@
     "@sveltejs/package": "^2.0.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@types/node": "^22.12.0",
-    "@types/vite": "^6.0.0",
+    "@typescript-eslint/parser": "^8.24.0",
     "@typescript-eslint/types": "^6.21.0",
     "@typescript-eslint/typescript-estree": "^6.21.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-svelte": "^2.46.1",
-    "glob": "^10.0.0",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
     "prettier-plugin-svelte": "^3.3.3",
@@ -48,10 +55,19 @@
     "rollup-plugin-visualizer": "^5.14.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
-    "tsup": "^8.3.6",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.20.0",
-    "vitest": "^1.6.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^1.6.0"
+  },
+  "scripts": {
+    "build": "vite build && pnpm run package",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "dev": "vite dev",
+    "format": "prettier --plugin-search-dir . --write .",
+    "lint": "prettier --plugin-search-dir . --check . && eslint .",
+    "package": "svelte-kit sync && svelte-package && publint && cp README.md dist/",
+    "preview": "vite preview"
   }
 }

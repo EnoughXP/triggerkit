@@ -1,6 +1,6 @@
 import { parse } from '@typescript-eslint/typescript-estree';
 import type { TSESTree } from '@typescript-eslint/types';
-import type { ExportedFunction } from '$lib/types';
+import type { ExportedFunction } from '../types';
 
 function isIdentifier(node: TSESTree.Parameter): node is TSESTree.Identifier & { typeAnnotation?: TSESTree.TSTypeAnnotation } {
   return node.type === 'Identifier';
@@ -10,7 +10,7 @@ function isNode(node: unknown): node is TSESTree.Node {
   return typeof node === 'object' && node !== null && 'type' in node;
 }
 
-export function parseFile(content: string, filePath: string) {
+function parseFile(content: string, filePath: string) {
   const ast = parse(content, {
     range: true,
     loc: true,
@@ -95,3 +95,5 @@ export function parseFile(content: string, filePath: string) {
   visit(ast);
   return exports;
 }
+
+export default parseFile;

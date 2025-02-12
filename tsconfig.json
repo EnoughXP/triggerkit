@@ -11,11 +11,13 @@
     "outDir": "./dist",
     "esModuleInterop": true,
     "types": [
-      "node"
+      "vite/client"
     ]
   },
   "include": [
-    "src"
+    "src/**/*.d.ts",
+    "src/**/*.ts",
+    "src/**/*.svelte"
   ],
   "exclude": [
     "node_modules",

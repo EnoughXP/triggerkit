@@ -6,7 +6,7 @@ interface FunctionMap {
   };
 }
 
-export function generateFunctionsModule(functions: ExportedFunction[]): string {
+function generateFunctionsModule(functions: ExportedFunction[]): string {
   const imports = functions
     .map((func) =>
       `import { ${func.exportName} } from '${func.path}';`
@@ -39,3 +39,5 @@ export function generateFunctionsModule(functions: ExportedFunction[]): string {
   }
 `;
 }
+
+export default generateFunctionsModule;

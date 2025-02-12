@@ -5,6 +5,21 @@ All notable changes to vite-plugin-triggerkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2024-02-12
+
+### Changed
+- **BREAKING**: Removed tsup build tooling dependency. Dependencies like `@typescript-eslint/typescript-estree` and `@typescript-eslint/types` are now required to be installed by the consuming project.
+
+### Fixed
+- Gracefully handle non-existent directories in `includeDirs` configuration instead of throwing ENOENT errors. The plugin will now skip missing directories and continue scanning available ones, with a warning message indicating which directories were skipped.
+
+### Added
+- Warning messages when configured directories in `includeDirs` do not exist, improving debugging experience.
+
+### Dependencies
+- Added `@typescript-eslint/typescript-estree` and `@typescript-eslint/types` as peer dependencies
+- Removed build dependencies related to tsup
+
 ## [1.0.0] - 2024-01-28
 
 ### Added

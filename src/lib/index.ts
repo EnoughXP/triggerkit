@@ -1,1 +1,2 @@
 export { triggerkit } from './triggerkit.js'
+export type { PluginOptions } from './types';
