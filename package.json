@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-triggerkit",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "description": "A vite plugin to connect sveltekit functions in your trigger.dev tasks",
   "keywords": [
     "svelte",
