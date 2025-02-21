@@ -29,10 +29,10 @@
     "dist"
   ],
   "peerDependencies": {
-    "svelte": "^5.0.0",
-    "vite": "^6.0.0",
+    "@typescript-eslint/types": "^7.0.0",
     "@typescript-eslint/typescript-estree": "^7.0.0",
-    "@typescript-eslint/types": "^7.0.0"
+    "svelte": "^5.0.0",
+    "vite": "^6.0.0"
   },
   "devDependencies": {
     "@eslint/compat": "^1.2.5",
@@ -45,6 +45,7 @@
     "@typescript-eslint/parser": "^8.24.0",
     "@typescript-eslint/types": "^6.21.0",
     "@typescript-eslint/typescript-estree": "^6.21.0",
+    "@vitest/coverage-v8": "^3.0.6",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-svelte": "^2.46.1",
@@ -66,8 +67,9 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "dev": "vite dev",
     "test": "vitest",
-    "test:watch": "vitest watch",
     "test:coverage": "vitest run --coverage",
+    "test:ui": "vitest --ui",
+    "test:watch": "vitest watch",
     "format": "prettier --plugin-search-dir . --write .",
     "lint": "prettier --plugin-search-dir . --check . && eslint .",
     "package": "svelte-kit sync && svelte-package && publint && cp README.md dist/",
