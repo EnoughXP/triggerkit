@@ -3,8 +3,7 @@ import type { Plugin, HmrContext } from 'vite';
 import { resolve } from 'node:path';
 import { promises as fs } from 'node:fs';
 import parseFile from './utils/parser.js';
-import type { ExportedFunction, PluginOptions } from './types.js';
-import generateFunctionsModule from './utils/generator.js';
+import type { ExportedFunction, FunctionMap, PluginOptions } from './types.js';
 
 
 export function triggerkit(options: PluginOptions = {}): Plugin {
@@ -22,21 +21,57 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
   let exportedFunctions: ExportedFunction[] = [];
   let resolvedIncludeDirs: string[] = [];
 
-
-  // Helper to generate env imports
   function generateEnvImports(variables: string[]): string {
-    if (!variables.length) return '';
+    const uniqueVars = [...new Set(variables)].filter(Boolean);
 
-    const imports = variables.map(v => `  ${v},`).join('\n');
-    return `import { ${imports} } from '$env/static/private';\n\n`;
+    if (!uniqueVars.length) return '';
+
+    return `const { ${uniqueVars.join(', ')} } = process.env;\n\n`;
   }
+  function generateFunctionsModule(functions: ExportedFunction[]): string {
+    const imports = functions
+      .map((func) =>
+        `import { ${func.exportName} } from '${func.path}';`
+      )
+      .join('\n');
 
-  // Modified generator function to include env variables
-  async function generateModuleWithEnv(functions: ExportedFunction[]): Promise<string> {
-    const envImports = generateEnvImports(env.variables);
-    const baseModule = await generateFunctionsModule(functions);
+    const exports_ = functions
+      .map((func) =>
+        `export const ${func.name} = ${func.exportName};`
+      )
+      .join('\n');
 
-    return envImports + baseModule;
+    const functionMap = functions.reduce<FunctionMap>((acc, func) => {
+      const isAsyncFunc = func.metadata.isAsync ||
+        func.metadata.returnType?.includes('Promise') ||
+        func.metadata.returnType?.startsWith('Promise<');
+
+      acc[func.exportName] = {
+        metadata: {
+          isAsync: isAsyncFunc,
+          parameters: func.metadata.parameters.map(param => ({
+            name: param.name,
+            type: param.type,
+            optional: param.optional || false
+          })),
+          returnType: func.metadata.returnType,
+          docstring: func.metadata.docstring
+        },
+        path: func.path
+      };
+      return acc;
+    }, {});
+
+    return `
+    ${imports}
+    ${exports_}
+    export const functions = ${JSON.stringify(functionMap, null, 2)};
+    export function getFunction(name: string) {
+      return functions[name];
+    }
+    export function listFunctions(): string[] {
+      return Object.keys(functions);
+    }`;
   }
 
   async function scanDirectory(dir: string): Promise<string[]> {
@@ -116,7 +151,11 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
     async load(id) {
       if (id === resolvedVirtualModuleId) {
         await updateExportedFunctions();
-        return generateFunctionsModule(exportedFunctions);
+
+        const envImports = generateEnvImports(env.variables);
+        const baseModule = generateFunctionsModule(exportedFunctions);
+
+        return envImports + baseModule;
       }
     },
 
