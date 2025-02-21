@@ -24,6 +24,19 @@ export interface PluginOptions {
    * @default 'virtual:sveltekit-functions'
    */
   virtualModuleId?: string;
+
+  /**
+     * Environment variables to import from '$env/static/private'
+     * These variables will be available in the generated module
+     * @example { variables: ['DATABASE_URL', 'API_KEY'] }
+     * @default { variables: [] }
+     */
+  env?: {
+    /**
+     * Array of environment variable names to import
+     */
+    variables: string[];
+  };
 }
 
 export interface VirtualModuleExports {

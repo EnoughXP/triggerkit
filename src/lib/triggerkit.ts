@@ -12,15 +12,32 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
     includeDirs: ['src/lib', 'src/routes/api'],
     include: ['**/*.ts', '**/*.js', '**/+server.ts'],
     exclude: ['**/node_modules/**', '**/*.test.ts', '**/*.spec.ts'],
-    virtualModuleId: 'virtual:sveltekit-functions'
+    virtualModuleId: 'virtual:sveltekit-functions',
+    env: { variables: [] }
   };
 
   const resolvedOptions = { ...defaultOptions, ...options };
-  const { includeDirs, include, exclude, virtualModuleId } = resolvedOptions;
+  const { includeDirs, include, exclude, virtualModuleId, env } = resolvedOptions;
   const resolvedVirtualModuleId = '\0' + virtualModuleId;
   let exportedFunctions: ExportedFunction[] = [];
   let resolvedIncludeDirs: string[] = [];
 
+
+  // Helper to generate env imports
+  function generateEnvImports(variables: string[]): string {
+    if (!variables.length) return '';
+
+    const imports = variables.map(v => `  ${v},`).join('\n');
+    return `import { ${imports} } from '$env/static/private';\n\n`;
+  }
+
+  // Modified generator function to include env variables
+  async function generateModuleWithEnv(functions: ExportedFunction[]): Promise<string> {
+    const envImports = generateEnvImports(env.variables);
+    const baseModule = await generateFunctionsModule(functions);
+
+    return envImports + baseModule;
+  }
 
   async function scanDirectory(dir: string): Promise<string[]> {
     const files: string[] = [];
