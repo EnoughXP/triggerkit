@@ -69,3 +69,19 @@ export interface ParsedFunction {
   name: string;
   docstring?: string;
 }
+
+export interface FunctionMap {
+  [key: string]: {
+    metadata: {
+      isAsync: boolean | undefined;
+      parameters: Array<{
+        name: string;
+        type?: string;
+        optional: boolean;
+      }>;
+      returnType?: string;
+      docstring?: string;
+    };
+    path: string;
+  };
+}
