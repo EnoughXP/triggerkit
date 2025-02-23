@@ -2,41 +2,34 @@ import type { TSESTree } from '@typescript-eslint/types';
 
 export interface PluginOptions {
   /**
-   * Directories to scan for exportable functions
-   * Default ['src/lib', 'src/routes/api']
+   * Path to output env-transformed functions
+   * @default 'src/trigger/generated/index.ts'
+  */
+  outputPath?: string;
+
+  /**
+   * Directories to scan for exportable functions.
+   * 
+   * @default ['src/lib', 'src/lib/server']
+   * @example ['src/lib/triggers']
    */
   includeDirs?: string[];
 
   /**
-   * File patterns to scan
-   * Default: ['**\/*.ts', '**\/*.js', '**\/+server.ts']
+   * File patterns to scan. Use forward slashes even on Windows.
+   * 
+   * @default ['**\/*.ts', '**\/*.js', '**\/+server.ts']
+   * @example ['**\/*.trigger.ts']
    */
   include?: string[];
 
   /**
-   * Patterns to exclude
-   * Default: ['**\/node_modules/**', '**\/*.test.ts', '**\/*.spec.ts']
+   * Patterns to exclude from scanning. Use forward slashes even on Windows.
+   * 
+   * @default ['**\/node_modules/**', '**\/*.test.ts', '**\/*.spec.ts']
+   * @example ['**\/*.d.ts']
    */
   exclude?: string[];
-
-  /**
-   * Virtual module ID for accessing functions
-   * @default 'virtual:sveltekit-functions'
-   */
-  virtualModuleId?: string;
-
-  /**
-     * Environment variables to import from '$env/static/private'
-     * These variables will be available in the generated module
-     * @example { variables: ['DATABASE_URL', 'API_KEY'] }
-     * @default { variables: [] }
-     */
-  env?: {
-    /**
-     * Array of environment variable names to import
-     */
-    variables: string[];
-  };
 }
 
 export interface VirtualModuleExports {
@@ -68,6 +61,12 @@ export interface ParsedFunction {
   declaration: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression;
   name: string;
   docstring?: string;
+}
+
+export interface ParseResult {
+  exports: ExportedFunction[];
+  envVars: string[];
+  transformedContent: string;
 }
 
 export interface FunctionMap {

@@ -1,78 +1,23 @@
 import { normalizePath } from 'vite';
 import type { Plugin, HmrContext } from 'vite';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { promises as fs } from 'node:fs';
 import parseFile from './utils/parser.js';
 import type { ExportedFunction, FunctionMap, PluginOptions } from './types.js';
 
-
 export function triggerkit(options: PluginOptions = {}): Plugin {
   const defaultOptions: Required<PluginOptions> = {
+    outputPath: 'src/trigger/generated/index.ts',
     includeDirs: ['src/lib', 'src/routes/api'],
     include: ['**/*.ts', '**/*.js', '**/+server.ts'],
     exclude: ['**/node_modules/**', '**/*.test.ts', '**/*.spec.ts'],
-    virtualModuleId: 'virtual:sveltekit-functions',
-    env: { variables: [] }
   };
 
   const resolvedOptions = { ...defaultOptions, ...options };
-  const { includeDirs, include, exclude, virtualModuleId, env } = resolvedOptions;
-  const resolvedVirtualModuleId = '\0' + virtualModuleId;
-  let exportedFunctions: ExportedFunction[] = [];
+  const { includeDirs, include, exclude, outputPath } = resolvedOptions;
   let resolvedIncludeDirs: string[] = [];
-
-  function generateEnvImports(variables: string[]): string {
-    const uniqueVars = [...new Set(variables)].filter(Boolean);
-
-    if (!uniqueVars.length) return '';
-
-    return `const { ${uniqueVars.join(', ')} } = process.env;\n\n`;
-  }
-  function generateFunctionsModule(functions: ExportedFunction[]): string {
-    const imports = functions
-      .map((func) =>
-        `import { ${func.exportName} } from '${func.path}';`
-      )
-      .join('\n');
-
-    const exports_ = functions
-      .map((func) =>
-        `export const ${func.name} = ${func.exportName};`
-      )
-      .join('\n');
-
-    const functionMap = functions.reduce<FunctionMap>((acc, func) => {
-      const isAsyncFunc = func.metadata.isAsync ||
-        func.metadata.returnType?.includes('Promise') ||
-        func.metadata.returnType?.startsWith('Promise<');
-
-      acc[func.exportName] = {
-        metadata: {
-          isAsync: isAsyncFunc,
-          parameters: func.metadata.parameters.map(param => ({
-            name: param.name,
-            type: param.type,
-            optional: param.optional || false
-          })),
-          returnType: func.metadata.returnType,
-          docstring: func.metadata.docstring
-        },
-        path: func.path
-      };
-      return acc;
-    }, {});
-
-    return `
-    ${imports}
-    ${exports_}
-    export const functions = ${JSON.stringify(functionMap, null, 2)};
-    export function getFunction(name: string) {
-      return functions[name];
-    }
-    export function listFunctions(): string[] {
-      return Object.keys(functions);
-    }`;
-  }
+  let exportedFunctions: ExportedFunction[] = [];
+  let discoveredEnvVars = new Set<string>();
 
   async function scanDirectory(dir: string): Promise<string[]> {
     const files: string[] = [];
@@ -90,14 +35,16 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
 
       for (const entry of entries) {
         const fullPath = resolve(currentDir, entry.name);
+        const relativePath = normalizePath(fullPath);
 
         if (entry.isDirectory()) {
-          if (!exclude.includes(entry.name)) {
+          if (!exclude.some(pattern => relativePath.includes(pattern.replace('*', '')))) {
             await scan(fullPath);
           }
         } else if (entry.isFile()) {
-          const relativePath = normalizePath(fullPath);
-          if (include.some(pattern => fullPath.endsWith(pattern.replace('*', '')))) {
+          if (include.some(pattern =>
+            new RegExp(pattern.replace(/\*/g, '.*')).test(relativePath)
+          )) {
             files.push(relativePath);
           }
         }
@@ -108,28 +55,85 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
     return files;
   }
 
-  async function updateExportedFunctions() {
+  async function scanForFunctions() {
     const cwd = process.cwd();
-
     const allFiles = await Promise.all(
       resolvedIncludeDirs.map(dir => scanDirectory(dir))
     );
 
     const flatFiles = allFiles.flat();
+    exportedFunctions = [];
+    discoveredEnvVars.clear();
 
-    exportedFunctions = (await Promise.all(
-      flatFiles.map(async file => {
-        try {
-          const content = await fs.readFile(file, 'utf-8');
-          const relativePath = normalizePath(file).replace(normalizePath(cwd) + '/', '');
-          return parseFile(content, relativePath);
-        } catch (error) {
-          console.warn(`Error reading file ${file}:`, error);
-          return [];
-        }
-      })
-    )).flat();
+    for (const file of flatFiles) {
+      try {
+        const content = await fs.readFile(file, 'utf-8');
+        const relativePath = normalizePath(file).replace(normalizePath(cwd) + '/', '');
+
+        const { exports, envVars } = parseFile(content, relativePath);
+        envVars.forEach(v => discoveredEnvVars.add(v));
+        exportedFunctions.push(...exports);
+      } catch (error) {
+        console.warn(`Error processing file ${file}: `, error);
+      }
+    }
   }
+
+  async function generateFunctionsModule(functions: ExportedFunction[]) {
+    // Group functions by their source file
+    const groupedFunctions = functions.reduce<Record<string, ExportedFunction[]>>((acc, func) => {
+      if (!acc[func.path]) {
+        acc[func.path] = [];
+      }
+      acc[func.path].push(func);
+      return acc;
+    }, {});
+
+    // Add env vars if present
+    const envVars = [...discoveredEnvVars];
+    const envImports = envVars.length > 0 ?
+      `const { ${envVars.join(', ')} } = process.env;\n\n` : '';
+
+    // Generate imports and exports grouped by file
+    const imports: string[] = [];
+    const exports: string[] = [];
+    const functionMetadata: Record<string, {
+      metadata: FunctionMetadata;
+      path: string;
+      envVars?: string[];
+    }> = {};
+
+    Object.entries(groupedFunctions).forEach(([path, funcs]) => {
+      const exportNames = funcs.map(f => f.exportName).join(', ');
+      imports.push(`import { ${exportNames} } from '$lib/${path}';`);
+
+      funcs.forEach(func => {
+        exports.push(`export const ${func.name} = ${func.exportName};`);
+        functionMetadata[func.name] = {
+          metadata: func.metadata,
+          path: func.path,
+          envVars: func.envVars
+        };
+      });
+    });
+
+    return `
+    ${envImports}
+    ${imports.join('\n')}
+
+    ${exports.join('\n')}
+
+    export const functions = ${JSON.stringify(functionMetadata, null, 2)} as const;
+    
+    export function getFunction(name: string) {
+      return functions[name];
+    }
+    
+    export function listFunctions(): string[] {
+      return Object.keys(functions);
+    }`;
+  }
+
 
   return {
     name: 'vite-plugin-triggerkit',
@@ -139,28 +143,17 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
       resolvedIncludeDirs = includeDirs.map(dir =>
         normalizePath(resolve(cwd, dir))
       );
-      updateExportedFunctions();
     },
 
-    resolveId(id) {
-      if (id === virtualModuleId) {
-        return resolvedVirtualModuleId;
-      }
-    },
-
-    async load(id) {
-      if (id === resolvedVirtualModuleId) {
-        await updateExportedFunctions();
-
-        const envImports = generateEnvImports(env.variables);
-        const baseModule = generateFunctionsModule(exportedFunctions);
-
-        return envImports + baseModule;
-      }
+    async buildStart() {
+      await scanForFunctions();
+      await fs.mkdir(dirname(outputPath), { recursive: true });
+      const content = await generateFunctionsModule(exportedFunctions);
+      await fs.writeFile(outputPath, content, 'utf-8');
     },
 
     async handleHotUpdate(ctx: HmrContext) {
-      const { file, server } = ctx;
+      const { file } = ctx;
       const normalizedFile = normalizePath(file);
 
       const isWatchedFile = resolvedIncludeDirs.some(dir => {
@@ -173,21 +166,21 @@ export function triggerkit(options: PluginOptions = {}): Plugin {
           const content = await fs.readFile(file, 'utf-8');
           const cwd = process.cwd();
           const relativePath = normalizePath(file).replace(normalizePath(cwd) + '/', '');
-          const newFunctions = parseFile(content, relativePath);
+
+          const { exports, envVars } = parseFile(content, relativePath);
+          envVars.forEach(v => discoveredEnvVars.add(v));
 
           exportedFunctions = exportedFunctions.filter(fn => fn.path !== relativePath);
-          exportedFunctions.push(...newFunctions);
+          exportedFunctions.push(...exports);
 
-          const mod = server.moduleGraph.getModuleById(resolvedVirtualModuleId);
-          if (mod) {
-            server.moduleGraph.invalidateModule(mod);
-            return [mod];
-          }
+          const moduleContent = await generateFunctionsModule(exportedFunctions);
+          await fs.writeFile(outputPath, moduleContent, 'utf-8');
         } catch (error) {
           console.warn(`Error updating file ${file}:`, error);
         }
       }
-      return undefined;
+
+      return [];
     }
   };
 }
