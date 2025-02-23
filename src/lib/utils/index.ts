@@ -1,1 +1,2 @@
-export { default as parser } from './parser.js';
+export { default as parser } from './parser';
+export { transformEnvImports } from './transforms';

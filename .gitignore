@@ -22,3 +22,9 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+.trigger
+/src/routes
+/src/lib/server
+/src/lib/client
+/src/trigger

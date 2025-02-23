@@ -5,7 +5,28 @@ All notable changes to vite-plugin-triggerkit will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2024-02-12
+## [1.2.0] - 2024-02-23
+
+### Added
+- Initial release of triggerkit
+- Vite plugin for SvelteKit server function integration
+- ESBuild plugin for Trigger.dev integration
+- TypeScript type preservation
+- Environment variable handling
+- Function metadata support
+- Hot Module Reloading support
+- Function discovery from server directories
+- JSDoc documentation preservation
+
+### Features
+- Multiple entry points support (Vite and ESBuild)
+- Automatic environment variable transformation
+- Path resolution for `$lib` imports
+- Server function scanning with configuration options
+- Type-safe function exports
+- Development and production build modes
+
+## [1.1.0] - 2024-02-12
 
 ### Changed
 - **BREAKING**: Removed tsup build tooling dependency. Dependencies like `@typescript-eslint/typescript-estree` and `@typescript-eslint/types` are now required to be installed by the consuming project.

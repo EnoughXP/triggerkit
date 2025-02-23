@@ -2,12 +2,6 @@ import type { TSESTree } from '@typescript-eslint/types';
 
 export interface PluginOptions {
   /**
-   * Path to output env-transformed functions
-   * @default 'src/trigger/generated/index.ts'
-  */
-  outputPath?: string;
-
-  /**
    * Directories to scan for exportable functions.
    * 
    * @default ['src/lib', 'src/lib/server']
@@ -32,9 +26,15 @@ export interface PluginOptions {
   exclude?: string[];
 }
 
-export interface VirtualModuleExports {
-  functions: Record<string, ExportedFunction>;
-  invoke: <T = any>(functionName: string, ...args: any[]) => Promise<T>;
+export interface TriggerkitOptions extends PluginOptions {
+  placement?: 'last' | 'first';
+  target?: 'deploy' | 'dev';
+}
+
+export interface ParameterInfo {
+  name: string;
+  type?: string;
+  optional: boolean;
 }
 
 export interface FunctionMetadata {
@@ -45,42 +45,32 @@ export interface FunctionMetadata {
 }
 
 export interface ExportedFunction {
+  /** The function name */
   name: string;
+  /** The path to the file containing the function */
   path: string;
+  /** The exported name of the function */
   exportName: string;
+  /** Metadata about the function */
   metadata: FunctionMetadata;
-}
-
-export interface ParameterInfo {
-  name: string;
-  type?: string;
-  optional: boolean;
+  /** Environment variables used by the function */
+  envVars?: string[];
 }
 
 export interface ParsedFunction {
+  /** The AST node for the function declaration */
   declaration: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression;
+  /** The function name */
   name: string;
+  /** The function's JSDoc comment, if any */
   docstring?: string;
 }
 
 export interface ParseResult {
+  /** The exported functions found in the file */
   exports: ExportedFunction[];
+  /** Environment variables used in the file */
   envVars: string[];
+  /** The transformed file content */
   transformedContent: string;
-}
-
-export interface FunctionMap {
-  [key: string]: {
-    metadata: {
-      isAsync: boolean | undefined;
-      parameters: Array<{
-        name: string;
-        type?: string;
-        optional: boolean;
-      }>;
-      returnType?: string;
-      docstring?: string;
-    };
-    path: string;
-  };
 }

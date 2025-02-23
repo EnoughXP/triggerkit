@@ -1,8 +1,8 @@
-# vite-plugin-triggerkit
+# triggerkit
 
 A Vite plugin that enables seamless integration between SvelteKit and Trigger.dev by allowing you to use your SvelteKit functions directly in your Trigger.dev projects.
 
-[![npm version](https://badge.fury.io/js/@sveltrigger%2Fvite.svg)](https://badge.fury.io/js/@sveltrigger%2Fvite)
+[![npm version](https://badge.fury.io/js/vite-plugin-triggerkit2Fvite.svg)](https://badge.fury.io/js/@sveltrigger%2Ftriggerkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
@@ -10,14 +10,13 @@ A Vite plugin that enables seamless integration between SvelteKit and Trigger.de
 - 🔄 Use SvelteKit functions directly in Trigger.dev jobs
 - 📦 Automatic function discovery and export
 - 🔍 TypeScript support with type preservation
-- 📝 Preserves JSDoc documentation
 - 🔥 Hot Module Reloading support
 - 🎯 Configurable directory scanning
 
 ## Installation
 
 ```bash
-npm install -D vite-plugin-triggerkit
+npm add -D triggerkit
 ```
 
 ## Quick Start
@@ -38,143 +37,100 @@ export default defineConfig({
 });
 ```
 
-2. Write your functions in SvelteKit:
+2. Configure Trigger.dev to use the plugin:
 
 ```typescript
-// src/lib/email.ts
+// trigger.config.ts
+import { defineConfig } from "@trigger.dev/sdk/v3";
+import { triggerkit } from "triggerkit/trigger";
+
+export default defineConfig({
+  project: "your-project-id",
+  build: {
+    extensions: [
+      triggerkit({
+        includeDirs: ['src/lib/server']
+      })
+    ]
+  }
+});
+```
+
+3. Write your server functions in SvelteKit:
+
+```typescript
+// src/lib/server/email.ts
+import { EMAIL_API_KEY } from '$env/static/private';
+
 /**
  * Sends a welcome email to a new user
  */
 export async function sendWelcomeEmail(userId: string) {
-  // Your email sending logic
-  return { message: `Hello, ${userId ?? "world"}`, };
+  // Your email sending logic using EMAIL_API_KEY
+  return { success: true, userId };
 }
 ```
 
-3. Use them in your Trigger.dev project:
+4. Use them in your Trigger.dev project:
 
 ```typescript
-import { sendWelcomeEmail } from "$lib";
-import { logger, task, wait } from "@trigger.dev/sdk/v3";
+import { sendWelcomeEmail } from "virtual:triggerkit";
+import { task } from "@trigger.dev/sdk/v3";
 
-export const helloWorldTask = task({
-  id: "hello-world",
-  // Set an optional maxDuration to prevent tasks from running indefinitely
-  maxDuration: 300, // Stop executing after 300 secs (5 mins) of compute
-  run: async (payload: any, { ctx }) => {
-    logger.log("Hello, world!", { payload, ctx });
-
-    const response = await sendWelcomeEmail(payload.userId);
-    await wait.for({ seconds: 5 });
-
-    return {
-      message: response.message,
-    }
+export const welcomeEmailTask = task({
+  id: "welcome-email",
+  run: async (payload: { userId: string }) => {
+    const result = await sendWelcomeEmail(payload.userId);
+    return result;
   },
 });
 ```
 
 ## Configuration
 
-The plugin accepts the following options:
-
 ```typescript
 interface PluginOptions {
-  // Directories to scan for exportable functions
-  includeDirs?: string[];  // default: ['src/lib', 'src/routes/api']
-  
-  // File patterns to scan
-  include?: string[];      // default: ['**/*.ts', '**/*.js', '**/+server.ts']
-  
-  // Patterns to exclude
-  exclude?: string[];      // default: ['**/node_modules/**', '**/*.test.ts', '**/*.spec.ts']
-  
-  // Virtual module ID for accessing functions
-  virtualModuleId?: string; // default: 'virtual:sveltekit-functions'
+  /**
+   * Directories to scan for exportable functions.
+   * @default ['src/lib', 'src/lib/server']
+   */
+  includeDirs?: string[];
+
+  /**
+   * File patterns to scan. Use forward slashes even on Windows.
+   * @default ['**/*.ts', '**/*.js', '**/+server.ts']
+   */
+  include?: string[];
+
+  /**
+   * Patterns to exclude from scanning. Use forward slashes even on Windows.
+   * @default ['**/node_modules/**', '**/*.test.ts', '**/*.spec.ts']
+   */
+  exclude?: string[];
 }
 ```
 
 ## Function Metadata
 
-You can access metadata about your functions using the exported `functions` object:
+The plugin preserves TypeScript types and JSDoc documentation. You can access function metadata through the exported `functions` object:
 
 ```typescript
-import { functions } from 'virtual:sveltekit-functions';
+import { functions } from 'virtual:triggerkit';
 
 console.log(functions.sendWelcomeEmail.metadata);
-// Output:
 // {
 //   isAsync: true,
 //   parameters: [
 //     { name: 'userId', type: 'string', optional: false }
 //   ],
-//   returnType: 'Promise<{ success: boolean }>',
+//   returnType: 'Promise<{ success: boolean, userId: string }>',
 //   docstring: 'Sends a welcome email to a new user'
 // }
 ```
 
-## Best Practices
+## Environment Variables
 
-1. **Function Organization**: Keep trigger-related functions in dedicated directories for better organization:
-   ```
-   src/lib/triggers/
-   ├── email.ts
-   ├── notifications.ts
-   └── users.ts
-   ```
-
-2. **Type Safety**: Always define types for function parameters and return values:
-   ```typescript
-   export async function createUser(data: UserData): Promise<User> {
-     // Implementation
-   }
-   ```
-
-3. **Documentation**: Add JSDoc comments to your functions for better developer experience:
-   ```typescript
-   /**
-    * Creates a new user in the database
-    * @param data - User creation data
-    * @returns Newly created user
-    */
-   export async function createUser(data: UserData): Promise<User> {
-     // Implementation
-   }
-   ```
-
-## Examples
-
-### Basic Usage
-```typescript
-// src/lib/auth.ts
-export async function verifyUser(token: string): Promise<boolean> {
-  // Verification logic
-}
-
-// trigger/auth.ts
-import { verifyUser } from 'virtual:sveltekit-functions';
-
-export const userVerificationJob = trigger.job({
-  id: "verify-user",
-  run: async (payload) => {
-    const isValid = await verifyUser(payload.token);
-    if (!isValid) {
-      throw new Error('Invalid user token');
-    }
-  }
-});
-```
-
-### With Function Metadata
-```typescript
-import { functions } from 'virtual:sveltekit-functions';
-
-// Get all available functions
-const availableFunctions = Object.keys(functions);
-
-// Check function parameters
-const params = functions.verifyUser.metadata.parameters;
-```
+The plugin automatically handles environment variables imported from `$env/static/private` or `$env/static/public`, making them available in your Trigger.dev tasks through `process.env`.
 
 ## Contributing
 

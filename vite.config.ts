@@ -1,9 +1,31 @@
-import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { resolve } from 'path';
 import { configDefaults } from 'vitest/config';
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  build: {
+    lib: {
+      entry: {
+        index: resolve(__dirname, 'src/lib/index.ts'),
+        trigger: resolve(__dirname, 'src/lib/trigger.ts')
+      },
+      formats: ['es']
+    },
+    rollupOptions: {
+      external: [
+        'vite',
+        'esbuild',
+        '@trigger.dev/sdk',
+        '@trigger.dev/build/extensions',
+        '@typescript-eslint/typescript-estree',
+        'fast-glob',
+        'path',
+        'fs',
+        'node:path',
+        'node:fs'
+      ]
+    }
+  },
   test: {
     ...configDefaults,
     globals: true,
