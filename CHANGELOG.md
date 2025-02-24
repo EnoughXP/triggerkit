@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.3
+
+### Patch Changes
+
+- consolidate functions to be shared in both ends of the plugin
+
 ## 1.3.2
 
 ### Patch Changes

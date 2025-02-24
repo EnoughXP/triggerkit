@@ -44,6 +44,16 @@ export interface FunctionMetadata {
   docstring?: string;
 }
 
+export interface FunctionManifest {
+  functions: Array<{
+    name: string;
+    exportName: string;
+    path: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  envVars: string[];
+}
+
 export interface ExportedFunction {
   /** The function name */
   name: string;
