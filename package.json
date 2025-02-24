@@ -1,6 +1,6 @@
 {
   "name": "vite-plugin-triggerkit",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "A plugin to connect SvelteKit functions to your trigger.dev tasks",
   "homepage": "https://github.com/EnoughXP/vite-plugin-triggerkit#readme",
   "keywords": [
@@ -36,9 +36,6 @@
     "dist",
     "README.md"
   ],
-  "bin": {
-    "vite-plugin-triggerkit": "./dist/cli/index.js"
-  },
   "peerDependencies": {
     "@trigger.dev/sdk": "^3.3.16",
     "esbuild": "^0.25.0",
@@ -71,8 +68,8 @@
     "fast-glob": "^3.3.3",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
+    "prettier-plugin-svelte": "^3.3.3",
     "publint": "^0.3.2",
-    "recast": "^0.23.9",
     "rollup-plugin-visualizer": "^5.14.0",
     "svelte": "^5.0.0",
     "trigger.dev": "^3.3.16",
@@ -85,7 +82,8 @@
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "prebuild": "pnpm run clean",
     "build": "vite build",
-    "postbuild": "chmod +x dist/cli/index.js && cp README.md dist/",
+    "package": "svelte-package && publint && cp README.md dist/",
+    "changeset": "changeset",
     "dev": "vite build --watch",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -93,7 +91,6 @@
     "test:watch": "vitest watch",
     "format": "prettier --write .",
     "lint": "prettier --check . && eslint .",
-    "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm run build && changeset publish",
     "prepublishOnly": "pnpm run build && publint"
