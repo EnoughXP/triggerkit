@@ -81,8 +81,8 @@
   "scripts": {
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "prebuild": "pnpm run clean",
-    "build": "vite build",
-    "package": "svelte-package && publint && cp README.md dist/",
+    "build": "vite build && pnpm run package",
+    "package": "svelte-kit sync && svelte-package && publint && cp README.md dist/",
     "changeset": "changeset",
     "dev": "vite build --watch",
     "test": "vitest",
@@ -92,7 +92,6 @@
     "format": "prettier --write .",
     "lint": "prettier --check . && eslint .",
     "version": "changeset version",
-    "release": "pnpm run build && changeset publish",
-    "prepublishOnly": "pnpm run build && publint"
+    "release": "pnpm run package && changeset publish"
   }
 }
