@@ -29,6 +29,9 @@
     "dist",
     "README.md"
   ],
+  "bin": {
+    "triggerkit": "./dist/cli/index.js"
+  },
   "peerDependencies": {
     "@trigger.dev/sdk": "^3.3.16",
     "esbuild": "^0.25.0",
@@ -38,6 +41,7 @@
     "fast-glob": "^3.3.3"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.28.1",
     "@eslint/compat": "^1.2.5",
     "@eslint/js": "^9.18.0",
     "@sveltejs/adapter-auto": "^4.0.0",
@@ -59,6 +63,7 @@
     "prettier": "^3.4.2",
     "prettier-plugin-svelte": "^3.3.3",
     "publint": "^0.3.2",
+    "recast": "^0.23.9",
     "rollup-plugin-visualizer": "^5.14.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
@@ -85,6 +90,9 @@
     "format": "prettier --plugin-search-dir . --write .",
     "lint": "prettier --plugin-search-dir . --check . && eslint .",
     "package": "svelte-kit sync && svelte-package && publint && cp README.md dist/",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "changeset": "changeset",
+    "version": "changeset version",
+    "release": "pnpm run build && changeset publish"
   }
 }
