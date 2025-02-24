@@ -2,13 +2,21 @@
   "name": "vite-plugin-triggerkit",
   "version": "1.2.0",
   "description": "A plugin to connect SvelteKit functions to your trigger.dev tasks",
+  "homepage": "https://github.com/EnoughXP/vite-plugin-triggerkit#readme",
   "keywords": [
+    "vite",
+    "vite-plugin",
     "svelte",
-    "trigger.dev"
+    "sveltekit",
+    "trigger.dev",
+    "functions"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/EnoughXP/vite-plugin-triggerkit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/EnoughXP/vite-plugin-triggerkit/issues"
   },
   "license": "MIT",
   "author": "Jason Gutierrez",
@@ -23,14 +31,13 @@
       "import": "./dist/trigger.js"
     }
   },
-  "svelte": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "README.md"
   ],
   "bin": {
-    "triggerkit": "./dist/cli/index.js"
+    "vite-plugin-triggerkit": "./dist/cli/index.js"
   },
   "peerDependencies": {
     "@trigger.dev/sdk": "^3.3.16",
@@ -39,6 +46,9 @@
   },
   "dependencies": {
     "fast-glob": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "devDependencies": {
     "@changesets/cli": "^2.28.1",
@@ -61,12 +71,10 @@
     "fast-glob": "^3.3.3",
     "globals": "^15.14.0",
     "prettier": "^3.4.2",
-    "prettier-plugin-svelte": "^3.3.3",
     "publint": "^0.3.2",
     "recast": "^0.23.9",
     "rollup-plugin-visualizer": "^5.14.0",
     "svelte": "^5.0.0",
-    "svelte-check": "^4.0.0",
     "trigger.dev": "^3.3.16",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.20.0",
@@ -76,23 +84,18 @@
   "scripts": {
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
     "prebuild": "pnpm run clean",
-    "build": "vite build && pnpm run package",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-    "dev": "vite dev",
-    "trigger:dev": "pnpm dlx trigger.dev@latest dev",
-    "trigger:deploy": "pnpm dlx trigger.dev@latest deploy",
-    "trigger:update": "pnpm dlx trigger.dev@latest update",
+    "build": "vite build",
+    "postbuild": "chmod +x dist/cli/index.js && cp README.md dist/",
+    "dev": "vite build --watch",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
     "test:watch": "vitest watch",
-    "format": "prettier --plugin-search-dir . --write .",
-    "lint": "prettier --plugin-search-dir . --check . && eslint .",
-    "package": "svelte-kit sync && svelte-package && publint && cp README.md dist/",
-    "preview": "vite preview",
+    "format": "prettier --write .",
+    "lint": "prettier --check . && eslint .",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm run build && changeset publish"
+    "release": "pnpm run build && changeset publish",
+    "prepublishOnly": "pnpm run build && publint"
   }
 }
