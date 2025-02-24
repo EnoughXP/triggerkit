@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.2
+
+### Patch Changes
+
+- Relaxed peer deps, removed CLI functionality
+
 ## 1.3.1
 
 ### Patch Changes
