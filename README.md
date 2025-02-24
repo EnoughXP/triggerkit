@@ -2,7 +2,7 @@
 
 A Vite plugin that enables seamless integration between SvelteKit and Trigger.dev by allowing you to use your SvelteKit functions directly in your Trigger.dev projects.
 
-[![npm version](https://badge.fury.io/js/vite-plugin-triggerkit2Fvite.svg)](https://badge.fury.io/js/@sveltrigger%2Ftriggerkit)
+[![npm version](https://badge.fury.io/js/triggerkit.svg)](https://badge.fury.io/js/triggerkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
@@ -16,7 +16,7 @@ A Vite plugin that enables seamless integration between SvelteKit and Trigger.de
 ## Installation
 
 ```bash
-npm add -D triggerkit
+npm add -D vite-plugin-triggerkit
 ```
 
 ## Quick Start
