@@ -8,12 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@typescript-eslint/types':
+        specifier: ^6.21.0
+        version: 6.21.0
+      '@typescript-eslint/typescript-estree':
+        specifier: ^6.21.0
+        version: 6.21.0(typescript@5.7.3)
       esbuild:
         specifier: ^0.25.0
         version: 0.25.0
-      fast-glob:
-        specifier: ^3.3.3
-        version: 3.3.3
     devDependencies:
       '@changesets/cli':
         specifier: ^2.28.1
@@ -48,12 +51,6 @@ importers:
       '@typescript-eslint/parser':
         specifier: ^8.24.0
         version: 8.24.1(eslint@9.21.0(jiti@1.21.7))(typescript@5.7.3)
-      '@typescript-eslint/types':
-        specifier: ^6.21.0
-        version: 6.21.0
-      '@typescript-eslint/typescript-estree':
-        specifier: ^6.21.0
-        version: 6.21.0(typescript@5.7.3)
       '@vitest/coverage-v8':
         specifier: ^3.0.6
         version: 3.0.6(vitest@3.0.6(@types/node@22.13.5)(jiti@1.21.7))

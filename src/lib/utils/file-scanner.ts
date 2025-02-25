@@ -1,45 +1,67 @@
-import { resolve } from 'node:path';
+import { join } from 'node:path';
 import { promises as fs } from 'node:fs';
-import fastGlob from 'fast-glob';
 import { normalizePath } from 'vite';
 import parseFile from './parser';
-import { transformEnvImports } from './transforms';
+
+async function scanDirectory(
+  dir: string,
+  include: string[],
+  exclude: string[]
+): Promise<string[]> {
+  const files: string[] = []
+
+  async function traverse(currentPath: string) {
+    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = join(currentPath, entry.name);
+      const relativePath = normalizePath(fullPath).replace(normalizePath(process.cwd()) + '/', '');
+
+      // Skip excluded paths
+      if (exclude.some(pattern => relativePath.includes(pattern.replace('!', '')))) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        await traverse(fullPath);
+      } else if (entry.isFile()) {
+        // Check if file matches include patterns
+        if (include.some(pattern => {
+          // Convert glob pattern to regex
+          const regexPattern = pattern
+            .replace(/\./g, '\\.')
+            .replace(/\*/g, '.*');
+          return new RegExp(regexPattern).test(relativePath);
+        })) {
+          files.push(normalizePath(fullPath));
+        }
+      }
+    }
+  }
+
+  await traverse(dir);
+  return files;
+}
+
 
 export async function scanDirectories(
   resolvedIncludeDirs: string[],
   include: string[],
   exclude: string[]
 ): Promise<string[]> {
-  const files: string[] = [];
+  const allFiles: string[] = [];
 
   for (const dir of resolvedIncludeDirs) {
     try {
       await fs.access(dir);
+      const dirFiles = await scanDirectory(dir, include, exclude);
+      allFiles.push(...dirFiles);
     } catch (error) {
       console.warn(`Directory ${dir} does not exist, skipping...`);
-      continue;
     }
-
-    const patterns = include.map(pattern =>
-      normalizePath(resolve(dir, pattern))
-    );
-    const negativePatterns = exclude.map(pattern =>
-      `!${normalizePath(resolve(dir, pattern))}`
-    );
-
-    const matches = await fastGlob([...patterns, ...negativePatterns], {
-      absolute: true,
-      dot: true,
-      followSymbolicLinks: false,
-      onlyFiles: true,
-      unique: true,
-      cwd: process.cwd()
-    });
-
-    files.push(...matches.map(f => normalizePath(f)));
   }
 
-  return files;
+  return allFiles;
 }
 
 export async function scanForFunctions(
@@ -55,10 +77,9 @@ export async function scanForFunctions(
     try {
       const content = await fs.readFile(file, 'utf-8');
       const relativePath = normalizePath(file).replace(process.cwd() + '/', '');
-      const { exports, envVars, transformedContent } = parseFile(content, relativePath);
+      const { exports, envVars } = parseFile(content, relativePath);
 
       if (envVars.length > 0) {
-        const transformed = transformEnvImports(transformedContent);
         envVars.forEach(v => discoveredEnvVars.add(v));
       }
 

@@ -1,5 +1,5 @@
 import { defineConfig } from 'vite';
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 import { configDefaults } from 'vitest/config';
 
 export default defineConfig({
@@ -18,11 +18,14 @@ export default defineConfig({
         '@trigger.dev/sdk',
         '@trigger.dev/build/extensions',
         '@typescript-eslint/typescript-estree',
-        'fast-glob',
-        'path',
-        'fs',
         'node:path',
-        'node:fs'
+        'node:fs',
+        // Add these to ensure they're properly externalized
+        'lightningcss',
+        '@parcel/css',
+        '@parcel/css-darwin-x64',
+        '@parcel/css-linux-x64',
+        '@parcel/css-win32-x64'
       ]
     }
   },
