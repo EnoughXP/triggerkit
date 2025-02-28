@@ -1,12 +1,14 @@
-export { default as parser } from './parser';
-export { transformEnvImports } from './transforms';
-export { scanDirectories, scanForFunctions, generateEntryModule } from './file-scanner';
+export { default as parser } from './parser.js';
 export {
-  persistVirtualModules,
-  loadVirtualModules,
-  isVirtualModuleCacheValid
-} from './virtual-module-store';
+  storeModule,
+  getModule,
+  getAllModules,
+  hasModule,
+  clearModules
+} from './module-store.js';
+export { scanForFunctions, generateEntryModule } from './scanner.js';
 export {
   VIRTUAL_MODULE_ID,
-  VIRTUAL_MODULES_RESOLVED_ID
-} from './constants';
+  RESOLVED_VIRTUAL_MODULE_ID,
+  NAMESPACE
+} from './constants.js';

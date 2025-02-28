@@ -74,3 +74,8 @@ export interface ParseResult {
   /** The transformed file content */
   transformedContent: string;
 }
+
+export interface VirtualModuleStore {
+  timestamp: number;
+  modules: Record<string, string>;
+}

@@ -1,2 +1,2 @@
-export { triggerkit } from './vite';
-export type { PluginOptions } from './types';
+export { triggerkit } from './triggerkit.js';
+export type { PluginOptions } from './types/index.js';

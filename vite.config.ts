@@ -7,7 +7,6 @@ export default defineConfig({
     lib: {
       entry: {
         index: resolve(__dirname, 'src/lib/index.ts'),
-        trigger: resolve(__dirname, 'src/lib/trigger.ts'),
       },
       formats: ['es']
     },

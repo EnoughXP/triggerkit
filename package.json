@@ -1,5 +1,5 @@
 {
-  "name": "vite-plugin-triggerkit",
+  "name": "triggerkit",
   "version": "1.3.3",
   "description": "A plugin to connect SvelteKit functions to your trigger.dev tasks",
   "homepage": "https://github.com/EnoughXP/vite-plugin-triggerkit#readme",
@@ -21,21 +21,17 @@
   "license": "MIT",
   "author": "Jason Gutierrez",
   "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./trigger": {
-      "types": "./dist/trigger.d.ts",
-      "import": "./dist/trigger.js"
     }
   },
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },

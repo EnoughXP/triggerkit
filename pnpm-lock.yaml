@@ -15,7 +15,7 @@ importers:
         specifier: ^6.21.0
         version: 6.21.0(typescript@5.7.3)
       esbuild:
-        specifier: ^0.25.0
+        specifier: '>=0.19.0'
         version: 0.25.0
     devDependencies:
       '@changesets/cli':
