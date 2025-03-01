@@ -58,11 +58,29 @@ function triggerkit(options?: PluginOptions): BuildExtension {
       context.logger.log(`Found ${fileCache.size} function files`);
 
       // Create and register an esbuild plugin
-      const functionsPlugin: Plugin = {
+      const triggerKitPlugin: Plugin = {
         name: 'virtual-triggerkit-module',
         setup(build) {
+
+          // Enhance module resolution
+          build.onResolve({ filter: /^src\// }, (args) => {
+            // Resolve paths relative to the working directory
+            let resolvedPath = path.resolve(context.workingDir, args.path);
+            const extensions = ['.ts', '.js'];
+            if (!fs.existsSync(resolvedPath)) {
+              for (const ext of extensions) {
+                const pathWithExt = resolvedPath + ext;
+                if (fs.existsSync(pathWithExt)) {
+                  resolvedPath = pathWithExt;
+                  break;
+                }
+              }
+            }
+            return { path: resolvedPath };
+          });
+
           // Handle requests for our virtual module
-          build.onResolve({ filter: new RegExp(`^${VIRTUAL_MODULE_ID}$`) }, () => {
+          build.onResolve({ filter: /^virtual:triggerkit$/ }, () => {
             if (fileCache.size === 0) {
               return { errors: [{ text: 'No function files found' }] };
             }
@@ -203,11 +221,12 @@ function triggerkit(options?: PluginOptions): BuildExtension {
       };
 
       // Register the plugin
-      context.registerPlugin(functionsPlugin);
+      context.registerPlugin(triggerKitPlugin);
 
       // Generate type declarations
       generateFunctionTypeDeclarations(context, fileCache);
 
+      context.logger.log(`Working Directory: ${context.workingDir}`);
       // Add function files as a layer to ensure they're included in the build
       const layerFiles: Record<string, string> = {};
       for (const [filePath, _] of fileCache.entries()) {
@@ -230,39 +249,39 @@ async function scanFolderForFunctions(
   excludePatterns: string[],
   fileCache: Map<string, CachedFile>,
   context: any
-): Promise<void> {
+) {
   try {
     // Read the directory contents
-    const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
+    const files = await fs.promises.readdir(folderPath, { withFileTypes: true });
 
-    for (const entry of entries) {
-      const entryPath = path.join(folderPath, entry.name);
+    for (const file of files) {
+      const fullPath = path.join(folderPath, file.name);
 
       // Skip entries that match exclude patterns
-      if (excludePatterns.some(pattern => entry.name.includes(pattern))) {
+      if (excludePatterns.some(pattern => file.name.includes(pattern))) {
         continue;
       }
 
-      if (entry.isDirectory()) {
+      if (file.isDirectory()) {
         // Recursively scan subdirectories
-        await scanFolderForFunctions(entryPath, filePatterns, excludePatterns, fileCache, context);
-      } else if (entry.isFile()) {
+        await scanFolderForFunctions(fullPath, filePatterns, excludePatterns, fileCache, context);
+      } else if (file.isFile()) {
         // Check if the file matches our patterns
-        const hasMatchingExtension = filePatterns.some(ext => entry.name.endsWith(ext));
+        const hasMatchingExtension = filePatterns.some(ext => file.name.endsWith(ext));
 
         if (hasMatchingExtension) {
           // Get file stats to check modification time
-          const fileStats = fs.statSync(entryPath);
+          const fileStats = fs.statSync(fullPath);
           const currentLastModified = fileStats.mtimeMs;
 
-          const existingCache = fileCache.get(entryPath);
+          const existingCache = fileCache.get(fullPath);
 
           // Check if the file has been modified since last build
           if (!existingCache || currentLastModified !== existingCache.lastModified) {
-            context.logger.log(`Found or updated function file: ${entryPath}`);
+            context.logger.log(`Found or updated function file: ${fullPath}`);
 
             try {
-              const content = fs.readFileSync(entryPath, 'utf-8');
+              const content = fs.readFileSync(fullPath, 'utf-8');
 
               // Transform SvelteKit environment imports
               const transformedContent = transformSvelteKitEnvImports(content);
@@ -271,17 +290,17 @@ async function scanFolderForFunctions(
               const hasFunctions = extractFunctionNames(transformedContent).length > 0;
 
               if (hasFunctions) {
-                fileCache.set(entryPath, {
-                  path: entryPath,
+                fileCache.set(fullPath, {
+                  path: fullPath,
                   lastModified: currentLastModified,
                   content: transformedContent
                 });
               }
             } catch (error) {
-              context.logger.warn(`Error reading file ${entryPath}:`, error);
+              context.logger.warn(`Error reading file ${fullPath}:`, error);
             }
           } else {
-            context.logger.log(`Using cached version of: ${entryPath}`);
+            context.logger.log(`Using cached version of: ${fullPath}`);
           }
         }
       }
@@ -327,6 +346,9 @@ function extractFunctionNames(content: string): string[] {
   // Match exported functions (both regular and arrow functions)
   const exportedFunctionRegex = /export\s+(async\s+)?function\s+([a-zA-Z0-9_]+)/g;
   const exportedArrowFunctionRegex = /export\s+const\s+([a-zA-Z0-9_]+)\s*=\s*(async\s+)?\(/g;
+
+  const functionRegex = /(?:export\s+)?(?:const|function)\s+(\w+)\s*=/g;
+  const namedExportRegex = /export\s+(?:const|function)\s+(\w+)\s*=/g;
 
   let match;
 
