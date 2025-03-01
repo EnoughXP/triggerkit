@@ -1,110 +1,135 @@
-import type { Plugin } from 'esbuild';
-import { esbuildPlugin } from "@trigger.dev/build/extensions";
-import { resolve } from 'node:path';
-import type { TriggerkitOptions } from './types/index.js';
+import type { BuildExtension } from "@trigger.dev/build/extensions";
+import { dirname, resolve } from 'node:path';
+import type { ExportedFunction, PluginOptions, TriggerkitOptions, VirtualModuleStore } from './types/index.js';
 import {
-  generateEntryModule,
-  scanForFunctions,
+  generateTypeDeclaration,
+  generateVirtualModule,
   NAMESPACE,
+  scanDirectories,
+  VIRTUAL_MODULE_ID,
 } from './utils/index.js';
 
-export function triggerkit(options: TriggerkitOptions = {}) {
-  const {
-    placement = 'last',
-    target = 'dev',
-  } = options;
 
-  const defaultOptions = {
-    includeDirs: ['src/lib'],
-    include: ['**/*.ts', '**/*.js', '**/*.svelte.ts', '**/*.svelte.js'],
+export function triggerkit(options: TriggerkitOptions = {}): BuildExtension {
+  const defaultOptions: Required<PluginOptions> = {
+    includeDirs: ['src/lib', 'src/lib/server'],
+    include: ['**/*.ts', '**/*.js', '**/*+server.ts'],
     exclude: ['**/node_modules/**', '**/*.test.ts', '**/*.spec.ts'],
   };
 
-  const resolvedOptions = { ...defaultOptions, ...options };
-  const { includeDirs, include, exclude } = resolvedOptions;
+  const resolvedOptions: Required<TriggerkitOptions> = {
+    ...defaultOptions,
+    ...options,
+    placement: options.placement || 'last',
+    target: options.target || 'deploy',
+  };
 
-  let cachedModuleContent: string | null = null;
+  // Virtual module cache
+  const virtualModuleStore: VirtualModuleStore = {
+    timestamp: 0,
+    modules: {}
+  };
 
-  const esbuildConfig: Plugin = {
-    name: 'vite-plugin-triggerkit',
-    setup(build) {
-      const resolvedIncludeDirs = includeDirs.map(dir =>
-        resolve(process.cwd(), dir)
-      );
+  return {
+    name: "triggerkit-extension",
 
-      build.onResolve({ filter: /^(\.\.?\/.*|src\/lib\/.*)$/ }, (args) => {
-        console.log(`[triggerkit] Resolving project path: ${args.path}`);
+    onBuildStart: async (context) => {
+      context.logger.log("Triggerkit extension starting!");
 
-        // Handle project-specific relative paths
-        const fullPath = resolve(args.resolveDir, args.path);
-
-        // Ensure the path ends with .ts
-        const finalPath = fullPath.endsWith('.ts') ? fullPath : `${fullPath}.ts`;
-
-        console.log(`[triggerkit] Original import: ${args.path}`);
-        console.log(`[triggerkit] Resolved project path: ${finalPath}`);
-
-        return {
-          path: finalPath,
-          namespace: 'file'
-        };
-      });
-
-      // Separate handler for virtual:triggerkit
-      build.onResolve({ filter: /^virtual:triggerkit$/ }, (args) => {
-        console.log(`[triggerkit] Resolving virtual module: ${args.path}`);
-        return {
-          path: args.path,
-          namespace: NAMESPACE
-        };
-      });
-
-      // Load the virtual module
-      build.onLoad({ filter: /.*/, namespace: NAMESPACE }, async (args) => {
-        try {
-          // If we have cached content, use it
-          if (cachedModuleContent) {
-            console.log('[triggerkit] Using cached virtual module');
+      // Create and register an esbuild plugin
+      const triggerkitPlugin = {
+        name: 'triggerkit-plugin',
+        setup(build) {
+          // Resolve the virtual module
+          build.onResolve({ filter: new RegExp(`^${VIRTUAL_MODULE_ID}$`) }, (args: { path: string; resolveDir: string }) => {
+            context.logger.log(`Resolving virtual module: ${args.path}`);
             return {
-              contents: cachedModuleContent,
-              loader: 'ts',
-              resolveDir: build.initialOptions.absWorkingDir
+              path: args.path,
+              namespace: NAMESPACE
             };
-          }
+          });
 
-          const { exportedFunctions, discoveredEnvVars } = await scanForFunctions(
-            resolvedIncludeDirs,
-            include,
-            exclude
-          );
+          // Also resolve for the alias pattern
+          build.onResolve({ filter: /^triggerkit-virtual:/ }, (args: { path: string; resolveDir: string }) => {
+            context.logger.log(`Resolving triggerkit alias: ${args.path}`);
+            return {
+              path: VIRTUAL_MODULE_ID,
+              namespace: NAMESPACE,
+            };
+          });
 
-          cachedModuleContent = generateEntryModule(exportedFunctions, discoveredEnvVars);
-          console.log(`[triggerkit] Generated module with ${exportedFunctions.length} functions`);
-          console.log(`[triggerkit] ${cachedModuleContent}`);
-          return {
-            contents: cachedModuleContent,
-            loader: 'ts',
-            resolveDir: build.initialOptions.absWorkingDir
-          };
-        } catch (error) {
-          console.error('[triggerkit] Error loading virtual module:', error);
-          return {
-            contents: `
-              // triggerkit error: ${error instanceof Error ? error.message : 'Unknown error'}
-              console.error("[triggerkit] Error generating module: ", ${JSON.stringify(String(error))});
-              export const functions = {}; 
-            `,
-            loader: 'ts',
-            resolveDir: build.initialOptions.absWorkingDir
-          };
+          // Load the virtual module
+          build.onLoad({ filter: /.*/, namespace: NAMESPACE }, async () => {
+            const currentTime = Date.now();
+
+            // Rescan if needed (either first time or stale cache)
+            if (virtualModuleStore.timestamp === 0 || currentTime - virtualModuleStore.timestamp > 2000) {
+              context.logger.log('Scanning for exportable functions...');
+
+              try {
+                // Scan for functions
+                const parseResults = await scanDirectories(
+                  resolvedOptions.includeDirs.map(dir => resolve(process.cwd(), dir)),
+                  resolvedOptions.include,
+                  resolvedOptions.exclude,
+                  context
+                );
+
+                // Collect all exported functions and environment variables
+                const allExports: ExportedFunction[] = [];
+                const allEnvVars: Set<string> = new Set();
+
+                for (const result of parseResults) {
+                  allExports.push(...result.exports);
+                  result.envVars.forEach(env => allEnvVars.add(env));
+                }
+
+                // Generate the virtual module content
+                const moduleContent = generateVirtualModule(allExports, Array.from(allEnvVars));
+
+                // Update the store
+                virtualModuleStore.modules[VIRTUAL_MODULE_ID] = moduleContent;
+                virtualModuleStore.timestamp = currentTime;
+
+                // Generate type declaration file
+                generateTypeDeclaration(allExports, context);
+
+                context.logger.log(`Found ${allExports.length} exportable functions and ${allEnvVars.size} environment variables`);
+              } catch (error) {
+                context.logger.warn("Error scanning for functions:", error);
+                virtualModuleStore.modules[VIRTUAL_MODULE_ID] = `
+                  // triggerkit error: ${error instanceof Error ? error.message : 'Unknown error'}
+                  console.error("[triggerkit] Error generating module: ", ${JSON.stringify(String(error))});
+                  export const functions = {}; 
+                `;
+                virtualModuleStore.timestamp = currentTime;
+              }
+            }
+
+            return {
+              contents: virtualModuleStore.modules[VIRTUAL_MODULE_ID],
+              loader: 'ts',
+            };
+          });
+
+          // Handle direct imports from lib files
+          build.onResolve({ filter: /^\.\.\/lib\// }, (args: { path: string; resolveDir: string, importer: string }) => {
+            // Convert the relative import path to an absolute path
+            const targetPath = resolve(dirname(args.importer), args.path);
+
+            return {
+              path: targetPath,
+              external: false,
+            };
+          });
         }
-      });
+      };
 
-      build.onEnd(() => {
-        cachedModuleContent = null;
+      // Register the plugin
+      context.registerPlugin(triggerkitPlugin, {
+        placement: resolvedOptions.placement,
+        target: resolvedOptions.target,
       });
     }
   };
-
-  return esbuildPlugin(esbuildConfig, { placement, target });
 }

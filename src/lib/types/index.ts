@@ -1,5 +1,6 @@
-import type { TSESTree } from '@typescript-eslint/types';
-
+/**
+ * Plugin options for controlling which files to scan
+ */
 export interface PluginOptions {
   /**
    * Directories to scan for exportable functions.
@@ -26,17 +27,33 @@ export interface PluginOptions {
   exclude?: string[];
 }
 
+/**
+ * Options for the triggerkit extension
+ */
 export interface TriggerkitOptions extends PluginOptions {
+  /**
+   * Where to place the plugin in the build chain
+   */
   placement?: 'last' | 'first';
+
+  /**
+   * Which build target to apply the plugin to
+   */
   target?: 'deploy' | 'dev';
 }
 
+/**
+ * Information about a function parameter
+ */
 export interface ParameterInfo {
   name: string;
   type?: string;
   optional: boolean;
 }
 
+/**
+ * Metadata about a function
+ */
 export interface FunctionMetadata {
   isAsync: boolean;
   parameters: ParameterInfo[];
@@ -44,6 +61,9 @@ export interface FunctionMetadata {
   docstring?: string;
 }
 
+/**
+ * Information about an exported function
+ */
 export interface ExportedFunction {
   /** The function name */
   name: string;
@@ -57,15 +77,9 @@ export interface ExportedFunction {
   envVars?: string[];
 }
 
-export interface ParsedFunction {
-  /** The AST node for the function declaration */
-  declaration: TSESTree.FunctionDeclaration | TSESTree.FunctionExpression;
-  /** The function name */
-  name: string;
-  /** The function's JSDoc comment, if any */
-  docstring?: string;
-}
-
+/**
+ * Result of parsing a file
+ */
 export interface ParseResult {
   /** The exported functions found in the file */
   exports: ExportedFunction[];
@@ -75,6 +89,9 @@ export interface ParseResult {
   transformedContent: string;
 }
 
+/**
+ * Store for virtual modules
+ */
 export interface VirtualModuleStore {
   timestamp: number;
   modules: Record<string, string>;

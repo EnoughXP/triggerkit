@@ -1,283 +1,262 @@
-import { parse } from '@typescript-eslint/typescript-estree';
-import type { TSESTree } from '@typescript-eslint/types';
+import ts from 'typescript';
 import type { ExportedFunction, ParseResult, ParameterInfo } from '../types/index.js';
 
-function isIdentifier(node: TSESTree.Parameter): node is TSESTree.Identifier & { typeAnnotation?: TSESTree.TSTypeAnnotation } {
-  return node.type === 'Identifier';
-}
 
-function isNode(node: unknown): node is TSESTree.Node {
-  return typeof node === 'object' && node !== null && 'type' in node;
-}
+export function parseFile(fileContent: string, filePath: string): ParseResult {
+  // Create default result
+  const result: ParseResult = {
+    exports: [],
+    envVars: [],
+    transformedContent: fileContent
+  };
 
-function getDocstringsFromAST(ast: TSESTree.Program): Map<number, string> {
-  const docstrings = new Map<number, string>();
-  ast.comments?.forEach(comment => {
-    if (comment.type === 'Block') {
-      docstrings.set(comment.range[1], comment.value.trim());
-    }
-  });
-  return docstrings;
-}
+  try {
+    // Parse with TypeScript
+    const sourceFile = ts.createSourceFile(
+      filePath,
+      fileContent,
+      ts.ScriptTarget.Latest,
+      true
+    );
 
-function extractEnvironmentVars(ast: TSESTree.Program): string[] {
-  const envVars: Set<string> = new Set();
+    // Find exported functions
+    result.exports = findExportedFunctions(sourceFile, filePath);
 
-  // Scan for environment variables from $env imports
-  ast.body.forEach(node => {
-    if (
-      node.type === 'ImportDeclaration' &&
-      (node.source.value === '$env/static/private' ||
-        node.source.value === '$env/static/public')
-    ) {
-      node.specifiers
-        .filter((spec): spec is TSESTree.ImportSpecifier =>
-          spec.type === 'ImportSpecifier')
-        .forEach(spec => envVars.add(spec.local.name));
-    }
-  });
+    // Find environment variables
+    result.envVars = findEnvironmentVariables(sourceFile);
 
-  // Also scan for process.env usage
-  function visitForEnvVars(node: TSESTree.Node) {
-    if (
-      node.type === 'MemberExpression' &&
-      node.object.type === 'MemberExpression' &&
-      node.object.object.type === 'Identifier' &&
-      node.object.object.name === 'process' &&
-      node.object.property.type === 'Identifier' &&
-      node.object.property.name === 'env' &&
-      node.property.type === 'Identifier'
-    ) {
-      envVars.add(node.property.name);
-    }
-
-    Object.entries(node).forEach(([, value]) => {
-      if (Array.isArray(value)) {
-        value.forEach(item => {
-          if (isNode(item)) visitForEnvVars(item);
-        });
-      } else if (isNode(value)) {
-        visitForEnvVars(value);
-      }
-    });
+    // Transform SvelteKit environment imports
+    result.transformedContent = transformSvelteKitEnvImports(fileContent, result.envVars);
+  } catch (error) {
+    console.error(`Error parsing file ${filePath}:`, error);
   }
 
-  ast.body.forEach(node => visitForEnvVars(node));
-
-  return Array.from(envVars);
+  return result;
 }
+/**
+ * Find exported functions in a TypeScript source file
+ */
+function findExportedFunctions(sourceFile: ts.SourceFile, filePath: string): ExportedFunction[] {
+  const exportedFunctions: ExportedFunction[] = [];
 
-function extractParameterInfo(params: TSESTree.Parameter[], content: string): ParameterInfo[] {
-  return params.map(param => {
-    if (isIdentifier(param)) {
-      return {
-        name: param.name,
-        type: param.typeAnnotation
-          ? content.slice(param.typeAnnotation.range[0], param.typeAnnotation.range[1]).replace(/^:\s*/, '')
-          : undefined,
-        optional: !!param.optional
-      };
+  // Helper function to recursively visit nodes
+  function visit(node: ts.Node) {
+    // Check for function declarations with export keyword
+    if (ts.isFunctionDeclaration(node) &&
+      node.name &&
+      node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) {
+
+      const functionName = node.name.text;
+      const isAsync = node.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) || false;
+
+      // Get parameters
+      const parameters: ParameterInfo[] = [];
+      if (node.parameters) {
+        for (const param of node.parameters) {
+          if (ts.isIdentifier(param.name)) {
+            parameters.push({
+              name: param.name.text,
+              type: param.type ? getTypeAsString(param.type) : undefined,
+              optional: !!param.questionToken
+            });
+          }
+        }
+      }
+
+      // Get return type
+      let returnType: string | undefined;
+      if (node.type) {
+        returnType = getTypeAsString(node.type);
+      }
+
+      // Get docstring
+      const docstring = getDocCommentForNode(node, sourceFile);
+
+      exportedFunctions.push({
+        name: functionName,
+        path: filePath,
+        exportName: functionName,
+        metadata: {
+          isAsync,
+          parameters,
+          returnType,
+          docstring
+        },
+        envVars: [] // Will be populated later
+      });
     }
-    return {
-      name: 'unknown',
-      type: undefined,
-      optional: false
-    };
-  });
+
+    // Check for exported variable declarations that are functions
+    if (ts.isVariableStatement(node) &&
+      node.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)) {
+      for (const declaration of node.declarationList.declarations) {
+        if (declaration.name && ts.isIdentifier(declaration.name) &&
+          declaration.initializer) {
+
+          // Check if it's a function expression or arrow function
+          if (ts.isFunctionExpression(declaration.initializer) ||
+            ts.isArrowFunction(declaration.initializer)) {
+
+            const functionName = declaration.name.text;
+            const isAsync = declaration.initializer.modifiers?.some(m => m.kind === ts.SyntaxKind.AsyncKeyword) || false;
+
+            // Get parameters
+            const parameters: ParameterInfo[] = [];
+            if (declaration.initializer.parameters) {
+              for (const param of declaration.initializer.parameters) {
+                if (ts.isIdentifier(param.name)) {
+                  parameters.push({
+                    name: param.name.text,
+                    type: param.type ? getTypeAsString(param.type) : undefined,
+                    optional: !!param.questionToken
+                  });
+                }
+              }
+            }
+
+            // Get return type
+            let returnType: string | undefined;
+            if (declaration.initializer.type) {
+              returnType = getTypeAsString(declaration.initializer.type);
+            }
+
+            // Get docstring
+            const docstring = getDocCommentForNode(declaration, sourceFile);
+
+            exportedFunctions.push({
+              name: functionName,
+              path: filePath,
+              exportName: functionName,
+              metadata: {
+                isAsync,
+                parameters,
+                returnType,
+                docstring
+              },
+              envVars: [] // Will be populated later
+            });
+          }
+        }
+      }
+    }
+
+    // Continue visiting child nodes
+    ts.forEachChild(node, visit);
+  }
+
+  // Start the visitor pattern
+  visit(sourceFile);
+
+  return exportedFunctions;
 }
 
-function transformEnvImports(code: string): string {
-  return code.replace(
-    /import\s*{\s*([^}]+)\s*}\s*from\s*['"](\$env\/static\/(?:private|public))['"];?/g,
-    (_, imports) => {
-      const vars = imports
-        .split(',')
-        .map((v: string) => v.trim())
-        .filter(Boolean);
-      return `const { ${vars.join(', ')} } = process.env;`;
+/**
+ * Find environment variables in a TypeScript source file
+ */
+function findEnvironmentVariables(sourceFile: ts.SourceFile): string[] {
+  const envVars: string[] = [];
+
+  // Helper function to recursively visit nodes
+  function visit(node: ts.Node) {
+    // Look for imports from $env/static/public or $env/static/private
+    if (ts.isImportDeclaration(node) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteral(node.moduleSpecifier)) {
+      const modulePath = node.moduleSpecifier.text;
+
+      if (modulePath === '$env/static/public' || modulePath === '$env/static/private') {
+        const importClause = node.importClause;
+
+        if (importClause && importClause.namedBindings &&
+          ts.isNamedImports(importClause.namedBindings)) {
+          // Process each named import
+          for (const element of importClause.namedBindings.elements) {
+            if (element.name && ts.isIdentifier(element.name)) {
+              envVars.push(element.name.text);
+            }
+          }
+        }
+      }
+    }
+
+    // Continue visiting child nodes
+    ts.forEachChild(node, visit);
+  }
+
+  // Start the visitor pattern
+  visit(sourceFile);
+
+  return envVars;
+}
+
+/**
+ * Convert a TypeScript type node to a string representation
+ */
+function getTypeAsString(typeNode: ts.TypeNode): string {
+  const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed });
+  return printer.printNode(ts.EmitHint.Unspecified, typeNode, typeNode.getSourceFile());
+}
+
+/**
+ * Get the JSDoc comment for a node
+ */
+function getDocCommentForNode(node: ts.Node, sourceFile: ts.SourceFile): string | undefined {
+  const nodePos = node.pos;
+
+  // Get the full text of the file
+  const fullText = sourceFile.getFullText();
+
+  // Look for JSDoc comment before the node
+  const commentRanges = ts.getLeadingCommentRanges(fullText, nodePos);
+
+  if (commentRanges && commentRanges.length > 0) {
+    // Get the last comment range (closest to the node)
+    const commentRange = commentRanges[commentRanges.length - 1];
+
+    // Extract the comment text
+    const commentText = fullText.substring(commentRange.pos, commentRange.end);
+
+    // Check if it's a JSDoc comment (starts with /**)
+    if (commentText.startsWith('/**')) {
+      return commentText;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Transform SvelteKit environment variable imports to use process.env
+ */
+function transformSvelteKitEnvImports(source: string, envVars: string[]): string {
+  // Transform imports from $env/static/public or $env/static/private
+  return source.replace(
+    /import\s+\{\s*([^}]+)\s*\}\s+from\s+['"](\$env\/static\/(?:public|private))['"]/g,
+    (match: string, imports: string, modulePath: string) => {
+      // Keep track of the original import for debugging
+      const originalImport = match;
+
+      // Parse the imported variables
+      const variables = imports.split(',').map((v: string) => v.trim());
+
+      // Determine if we're dealing with public or private env vars
+      const isPublic = modulePath.endsWith('public');
+      const envType = isPublic ? 'public' : 'private';
+
+      // Add a comment with the original import for reference
+      let result = `// Original: ${originalImport.trim()}\n`;
+      result += `// Transformed $env/static/${envType} imports\n`;
+
+      // Generate process.env assignments for each variable
+      const processEnvAssignments = variables
+        .map((varName: string) => `const ${varName} = process.env.${varName};`)
+        .join('\n');
+
+      return result + processEnvAssignments;
     }
   );
 }
 
-function extractExportedFunctions(
-  ast: TSESTree.Program,
-  filePath: string,
-  content: string,
-  docstrings: Map<number, string>,
-  envVars: string[]
-): ExportedFunction[] {
-  const exports: ExportedFunction[] = [];
 
-  function getDocstring(node: TSESTree.Node): string | undefined {
-    return docstrings.get(node.range[0] - 1);
-  }
-
-  function visit(node: TSESTree.Node) {
-    // Export named function declarations
-    if (node.type === 'ExportNamedDeclaration') {
-      // Handle function declarations
-      if (node.declaration?.type === 'FunctionDeclaration') {
-        const func = node.declaration;
-        if (func.id) {
-          exports.push({
-            name: func.id.name,
-            path: filePath,
-            exportName: func.id.name,
-            metadata: {
-              isAsync: !!func.async,
-              parameters: extractParameterInfo(func.params, content),
-              returnType: func.returnType
-                ? content.slice(func.returnType.range[0], func.returnType.range[1]).replace(/^:\s*/, '')
-                : undefined,
-              docstring: getDocstring(node)
-            },
-            envVars: envVars.length > 0 ? envVars : undefined
-          });
-        }
-      }
-
-      // Handle variable declarations (const, let, var)
-      else if (node.declaration?.type === 'VariableDeclaration') {
-        node.declaration.declarations.forEach(decl => {
-          if (
-            decl.id.type === 'Identifier' &&
-            decl.init &&
-            (
-              decl.init.type === 'ArrowFunctionExpression' ||
-              decl.init.type === 'FunctionExpression'
-            )
-          ) {
-            const funcExpr = decl.init;
-            exports.push({
-              name: decl.id.name,
-              path: filePath,
-              exportName: decl.id.name,
-              metadata: {
-                isAsync: !!funcExpr.async,
-                parameters: extractParameterInfo(funcExpr.params, content),
-                returnType: funcExpr.returnType
-                  ? content.slice(funcExpr.returnType.range[0], funcExpr.returnType.range[1]).replace(/^:\s*/, '')
-                  : undefined,
-                docstring: getDocstring(node)
-              },
-              envVars: envVars.length > 0 ? envVars : undefined
-            });
-          }
-        });
-      }
-
-      // Handle named exports (export { func1, func2 })
-      else if (node.specifiers.length > 0) {
-        // We'll need to find the original declarations for these
-        node.specifiers.forEach(specifier => {
-          if (specifier.type === 'ExportSpecifier') {
-            // We'll collect these names and try to find their declarations later
-            // This is more complex and would require tracking declarations in the module
-            // For now, we'll just add them as simple exports without detailed metadata
-            exports.push({
-              name: specifier.exported.name,
-              path: filePath,
-              exportName: specifier.local.name,
-              metadata: {
-                isAsync: false, // We don't know without tracking
-                parameters: [],
-                returnType: undefined,
-                docstring: undefined
-              },
-              envVars: envVars.length > 0 ? envVars : undefined
-            });
-          }
-        });
-      }
-    }
-
-    // Handle default exports
-    else if (node.type === 'ExportDefaultDeclaration') {
-      if (node.declaration.type === 'FunctionDeclaration') {
-        const func = node.declaration;
-        const name = func.id ? func.id.name : 'default';
-        exports.push({
-          name,
-          path: filePath,
-          exportName: 'default',
-          metadata: {
-            isAsync: !!func.async,
-            parameters: extractParameterInfo(func.params, content),
-            returnType: func.returnType
-              ? content.slice(func.returnType.range[0], func.returnType.range[1]).replace(/^:\s*/, '')
-              : undefined,
-            docstring: getDocstring(node)
-          },
-          envVars: envVars.length > 0 ? envVars : undefined
-        });
-      }
-      // Handle arrow functions or function expressions in default exports
-      else if (
-        node.declaration.type === 'ArrowFunctionExpression' ||
-        node.declaration.type === 'FunctionExpression'
-      ) {
-        const funcExpr = node.declaration;
-        exports.push({
-          name: 'default',
-          path: filePath,
-          exportName: 'default',
-          metadata: {
-            isAsync: !!funcExpr.async,
-            parameters: extractParameterInfo(funcExpr.params, content),
-            returnType: funcExpr.returnType
-              ? content.slice(funcExpr.returnType.range[0], funcExpr.returnType.range[1]).replace(/^:\s*/, '')
-              : undefined,
-            docstring: getDocstring(node)
-          },
-          envVars: envVars.length > 0 ? envVars : undefined
-        });
-      }
-    }
-
-    // Continue traversing the AST
-    Object.entries(node).forEach(([, value]) => {
-      if (Array.isArray(value)) {
-        value.forEach(item => {
-          if (isNode(item)) visit(item);
-        });
-      } else if (isNode(value)) {
-        visit(value);
-      }
-    });
-  }
-
-  visit(ast);
-  return exports;
-}
-
-export function parseFile(content: string, filePath: string): ParseResult {
-  try {
-    const ast = parse(content, {
-      range: true,
-      loc: true,
-      comment: true,
-    });
-
-    const docstrings = getDocstringsFromAST(ast);
-    const envVars = extractEnvironmentVars(ast);
-    const exports = extractExportedFunctions(ast, filePath, content, docstrings, envVars);
-
-    // Use the shared transform function
-    const transformedContent = transformEnvImports(content);
-
-    return {
-      exports,
-      envVars,
-      transformedContent
-    };
-  } catch (error) {
-    console.error(`[triggerkit] Error parsing file ${filePath}:`, error);
-    return {
-      exports: [],
-      envVars: [],
-      transformedContent: content
-    };
-  }
-}
 
 export default parseFile;
