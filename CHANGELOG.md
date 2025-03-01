@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.2
+
+### Patch Changes
+
+- Package builds and resolves with virtual modules
+
 ## 1.5.1
 
 ### Patch Changes
