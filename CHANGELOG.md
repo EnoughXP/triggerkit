@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0
+
+### Minor Changes
+
+- Restructured core plugin code
+
 ## 1.3.3
 
 ### Patch Changes
