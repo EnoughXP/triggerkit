@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1
+
+### Patch Changes
+
+- remove export of virtual module type definition
+
 ## 1.5.0
 
 ### Minor Changes
