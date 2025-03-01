@@ -1,159 +1,290 @@
-import { join } from 'node:path';
-import { promises as fs } from 'node:fs';
-import { normalizePath } from 'vite';
+import path from 'node:path';
+import fs from 'node:fs';
 import parseFile from './parser.js';
-import type { ExportedFunction } from '$lib/types/index.js';
+import type { ExportedFunction, ParseResult } from '$lib/types/index.js';
+import { VIRTUAL_MODULE_ID } from './constants.js';
 
+/**
+ * Normalize file paths to use forward slashes consistently
+*/
+function normalizePath(filepath: string): string {
+  return filepath.replace(/\\/g, '/');
+}
+
+/**
+ * Scan a single directory for files matching the patterns
+ */
 async function scanDirectory(
   dir: string,
-  include: string[],
-  exclude: string[]
+  includePatterns: string[],
+  excludePatterns: string[],
+  context: any
 ): Promise<string[]> {
   const files: string[] = [];
-  console.log(`[triggerkit] Scanning directory: ${dir}`);
+  context.logger.log(`Scanning directory: ${dir}`);
 
-  async function traverse(currentPath: string) {
-    const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  // Check if pattern matches a file (simple pattern matching)
+  function matchesPattern(filepath: string, patterns: string[]): boolean {
+    const normalizedPath = normalizePath(filepath);
 
-    for (const entry of entries) {
-      const fullPath = join(currentPath, entry.name);
-      const relativePath = normalizePath(fullPath).replace(normalizePath(process.cwd()) + '/', '');
-
-      // Skip node_modules and other excluded patterns (simple string check)
-      if (exclude.some(pattern => relativePath.includes(pattern.replace('**/', '')))) {
-        continue;
+    return patterns.some(pattern => {
+      // Simple case: direct extension match (e.g., *.ts)
+      if (pattern.startsWith('*.') && normalizedPath.endsWith(pattern.substring(1))) {
+        return true;
       }
 
-      if (entry.isDirectory()) {
-        await traverse(fullPath);
-      } else if (entry.isFile()) {
-        // Check if the file extension matches any of the include patterns
-        const matchesInclude = include.some(pattern => {
-          const fileExtension = pattern.split('.').pop() || '';
-          return entry.name.endsWith(fileExtension) &&
-            !entry.name.includes('.test.') &&
-            !entry.name.includes('.spec.');
-        });
+      // Simple case: specific file pattern (e.g., **/*.ts)
+      if (pattern.includes('**')) {
+        const extension = pattern.split('.').pop() || '';
+        return normalizedPath.endsWith(`.${extension}`);
+      }
 
-        if (matchesInclude) {
-          files.push(normalizePath(fullPath));
-        } else {
-          console.log(`[triggerkit] Skipping file (not matching include patterns): ${relativePath}`);
+      // Fallback: simple includes check
+      return normalizedPath.includes(pattern.replace('**/', '').replace('*', ''));
+    });
+  }
+
+  // Check if file should be excluded
+  function shouldExclude(filepath: string): boolean {
+    return matchesPattern(filepath, excludePatterns);
+  }
+
+  // Check if file should be included
+  function shouldInclude(filepath: string): boolean {
+    return matchesPattern(filepath, includePatterns);
+  }
+
+  // Recursive function to traverse directories
+  async function traverse(currentPath: string): Promise<void> {
+    try {
+      const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(currentPath, entry.name);
+        const relativePath = normalizePath(fullPath).replace(normalizePath(process.cwd()) + '/', '');
+
+        // Skip excluded paths
+        if (shouldExclude(relativePath)) {
+          continue;
+        }
+
+        if (entry.isDirectory()) {
+          // Recursively traverse subdirectories
+          await traverse(fullPath);
+        } else if (entry.isFile() && shouldInclude(relativePath)) {
+          // Add matching files to the result
+          files.push(fullPath);
         }
       }
+    } catch (error) {
+      context.logger.warn(`Error traversing directory ${currentPath}:`, error);
     }
   }
 
-  await traverse(dir);
+  try {
+    // Check if directory exists before traversing
+    await fs.promises.access(dir, fs.constants.R_OK);
+    await traverse(dir);
+  } catch (error) {
+    context.logger.warn(`Cannot access directory ${dir}:`, error);
+  }
+
   return files;
 }
-async function scanDirectories(
-  resolvedIncludeDirs: string[],
-  include: string[],
-  exclude: string[]
-): Promise<string[]> {
+
+/**
+ * Scan multiple directories for exportable functions
+ */
+export async function scanDirectories(
+  includeDirs: string[],
+  includePatterns: string[],
+  excludePatterns: string[],
+  context: any
+): Promise<ParseResult[]> {
+  const results: ParseResult[] = [];
   const allFiles: string[] = [];
 
-  for (const dir of resolvedIncludeDirs) {
+  // Scan each include directory
+  for (const dir of includeDirs) {
     try {
-      await fs.access(dir);
-      const dirFiles = await scanDirectory(dir, include, exclude);
-      allFiles.push(...dirFiles);
+      const files = await scanDirectory(dir, includePatterns, excludePatterns, context);
+      allFiles.push(...files);
+
+      context.logger.log(`Found ${files.length} matching files in ${dir}`);
     } catch (error) {
-      console.warn(`Directory ${dir} does not exist, skipping...`);
+      context.logger.warn(`Error scanning directory ${dir}:`, error);
     }
   }
 
-  return allFiles;
-}
-
-export async function scanForFunctions(
-  resolvedIncludeDirs: string[],
-  include: string[],
-  exclude: string[],
-) {
-  console.log(`[triggerkit] Scanning directories: ${resolvedIncludeDirs.join(', ')}`);
-  const files = await scanDirectories(resolvedIncludeDirs, include, exclude);
-
-  if (files.length > 0) {
-    console.log(`[triggerkit] Files to scan: ${files.join('\n')}`);
-  }
-
-  const exportedFunctions = [];
-  const discoveredEnvVars = new Set<string>();
-
-  for (const file of files) {
+  // Process each file
+  for (const filePath of allFiles) {
     try {
+      // Read the file content
+      const fileContent = await fs.promises.readFile(filePath, 'utf-8');
 
-      const content = await fs.readFile(file, 'utf-8');
-      const relativePath = normalizePath(file).replace(normalizePath(process.cwd()) + '/', '');
-
-      // Modified to parse all files regardless of annotations
-      const { exports, envVars } = parseFile(content, relativePath); // Pass false to indicate no annotation requirement
-
-      if (exports.length > 0) {
-        console.log(`[triggerkit] Exports: ${exports.map(e => e.name).join(', ')}`);
-      }
-
-      if (envVars.length > 0) {
-        envVars.forEach(v => discoveredEnvVars.add(v));
-      }
-
-      exportedFunctions.push(...exports);
+      // Parse the file
+      const parseResult = parseFile(fileContent, filePath);
+      results.push(parseResult);
     } catch (error) {
-      console.warn(`[triggerkit] Error processing file ${file}: `, error);
+      context.logger.warn(`Error processing file ${filePath}:`, error);
     }
   }
 
-  return { exportedFunctions, discoveredEnvVars };
+  return results;
 }
 
-export function generateEntryModule(
+/**
+ * Generate the virtual module content
+ */
+export function generateVirtualModule(
   exportedFunctions: ExportedFunction[],
-  discoveredEnvVars: Set<string>
+  envVars: string[]
 ): string {
-  const envVars = [...discoveredEnvVars];
+  // Start building the module content
+  let moduleContent = '// Generated by triggerkit\n\n';
 
-  // Group functions by their source file
-  const functionsByPath = exportedFunctions.reduce((acc, func) => {
-    // Convert absolute path to path relative to project root
-    const relativePath = func.path.replace(process.cwd() + '/', '');
+  // Add environment variable declarations
+  if (envVars.length > 0) {
+    moduleContent += '// Environment variables\n';
 
-    // If the path starts with src/, remove it
-    const adjustedPath = relativePath.startsWith('src/')
-      ? relativePath.slice(4)  // Remove 'src/' prefix
-      : relativePath;
+    for (const envVar of envVars) {
+      moduleContent += `const ${envVar} = process.env.${envVar};\n`;
+    }
 
-    // Remove .ts extension
-    const importPath = adjustedPath.replace(/\.ts$/, '');
+    moduleContent += '\n';
+  }
 
-    if (!acc[importPath]) acc[importPath] = [];
-    acc[importPath].push(func.exportName);
-    return acc;
-  }, {} as Record<string, string[]>);
+  // Add imports for each function grouped by file
+  moduleContent += '// Function imports\n';
+  const importedFunctionsByFile: Record<string, ExportedFunction[]> = {};
 
-  return `
-// Auto-generated by triggerkit
-// Current working dir: ${process.cwd()}
-// DO NOT EDIT
-${envVars.length > 0 ? `const { ${envVars.join(', ')} } = process.env;\n` : ''}
+  for (const func of exportedFunctions) {
+    const filePath = func.path;
 
-// Re-export transformed functions grouped by module
-${Object.entries(functionsByPath)
-      .map(([path, exports]) => `export { ${exports.join(', ')} } from '../${path}';`)
-      .join('\n')}
+    if (!importedFunctionsByFile[filePath]) {
+      importedFunctionsByFile[filePath] = [];
+    }
 
-// Export function metadata
-export const functions = ${JSON.stringify(
-        exportedFunctions.reduce((acc, func) => ({
-          ...acc,
-          [func.name]: {
-            metadata: func.metadata,
-            path: func.path,
-            envVars: [...discoveredEnvVars]
-          }
-        }), {}),
-        null,
-        2
-      )} as const;`;
+    importedFunctionsByFile[filePath].push(func);
+  }
+
+  // Generate import statements
+  for (const [filePath, functions] of Object.entries(importedFunctionsByFile)) {
+    // Convert absolute path to relative import path
+    const importPath = path.relative(process.cwd(), filePath)
+      .replace(/\\/g, '/') // Convert backslashes to forward slashes
+      .replace(/\.ts$|\.js$/, ''); // Remove extension
+
+    // Format the imports - group functions from the same file
+    const functionNames = functions.map(f => f.name).join(', ');
+    moduleContent += `import { ${functionNames} } from '${importPath}';\n`;
+  }
+
+  moduleContent += '\n// Export all functions\n';
+
+  // Re-export functions grouped by file
+  for (const [filePath, functions] of Object.entries(importedFunctionsByFile)) {
+    const functionNames = functions.map(f => f.name).join(', ');
+    moduleContent += `export { ${functionNames} };\n`;
+  }
+
+  // Export a functions object for easier consumption
+  moduleContent += '\n// Export as an object for easier consumption\n';
+  moduleContent += 'export const functions = {\n';
+
+  for (const func of exportedFunctions) {
+    moduleContent += `  ${func.name},\n`;
+  }
+
+  moduleContent += '};\n';
+
+  return moduleContent;
+}
+
+/**
+ * Generate a TypeScript declaration file for the virtual module
+ */
+export function generateTypeDeclaration(
+  exportedFunctions: ExportedFunction[],
+  context: any,
+  outputPath?: string
+): void {
+  try {
+    // Start building the declaration file
+    let declarationContent = `// Generated by triggerkit\n\n`;
+    declarationContent += `declare module '${VIRTUAL_MODULE_ID}' {\n`;
+
+    // Add function declarations
+    for (const func of exportedFunctions) {
+      // Add JSDoc if available
+      if (func.metadata.docstring) {
+        // Convert JSDoc to proper format
+        const formattedDocstring = func.metadata.docstring
+          .split('\n')
+          .map(line => `  ${line}`)
+          .join('\n');
+
+        declarationContent += `${formattedDocstring}\n`;
+      }
+
+      // Build parameter list with types
+      const params = func.metadata.parameters.map(param => {
+        const paramType = param.type || 'any';
+        return `${param.name}${param.optional ? '?' : ''}: ${paramType}`;
+      }).join(', ');
+
+      // Add return type
+      const returnType = func.metadata.returnType || 'any';
+      const asyncPrefix = func.metadata.isAsync ? 'Promise<' : '';
+      const asyncSuffix = func.metadata.isAsync ? '>' : '';
+
+      // Export function declaration
+      declarationContent += `  export function ${func.name}(${params}): ${asyncPrefix}${returnType}${asyncSuffix};\n\n`;
+    }
+
+    // Add the functions object type
+    declarationContent += `  export const functions: {\n`;
+    for (const func of exportedFunctions) {
+      // Build parameter list with types
+      const params = func.metadata.parameters.map(param => {
+        const paramType = param.type || 'any';
+        return `${param.name}${param.optional ? '?' : ''}: ${paramType}`;
+      }).join(', ');
+
+      // Add return type
+      const returnType = func.metadata.returnType || 'any';
+      const asyncPrefix = func.metadata.isAsync ? 'Promise<' : '';
+      const asyncSuffix = func.metadata.isAsync ? '>' : '';
+
+      declarationContent += `    ${func.name}: (${params}) => ${asyncPrefix}${returnType}${asyncSuffix};\n`;
+    }
+    declarationContent += `  };\n`;
+
+    // Close the module declaration
+    declarationContent += `}\n`;
+
+    // Write the declaration file to the project root or build directory
+    const typesDir = path.resolve(process.cwd(), 'src/types');
+    if (!fs.existsSync(typesDir)) {
+      fs.mkdirSync(typesDir, { recursive: true });
+    }
+
+    const declarationPath = path.resolve(typesDir, 'virtual-triggerkit.d.ts');
+    fs.writeFileSync(declarationPath, declarationContent);
+
+    context.logger.log(`Generated TypeScript declaration file at: ${declarationPath}`);
+
+    if (outputPath) {
+      // Make sure the directory exists
+      const dir = path.dirname(outputPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      fs.writeFileSync(outputPath, declarationContent);
+      context.logger.log(`Also wrote declaration file to: ${outputPath}`);
+    }
+  } catch (error) {
+    context.logger.warn(`Error generating TypeScript declaration file:`, error);
+  }
 }

@@ -39,7 +39,7 @@ export function triggerkit(options: TriggerkitOptions = {}): BuildExtension {
       // Create and register an esbuild plugin
       const triggerkitPlugin = {
         name: 'triggerkit-plugin',
-        setup(build) {
+        setup(build: any) {
           // Resolve the virtual module
           build.onResolve({ filter: new RegExp(`^${VIRTUAL_MODULE_ID}$`) }, (args: { path: string; resolveDir: string }) => {
             context.logger.log(`Resolving virtual module: ${args.path}`);
@@ -92,7 +92,11 @@ export function triggerkit(options: TriggerkitOptions = {}): BuildExtension {
                 virtualModuleStore.timestamp = currentTime;
 
                 // Generate type declaration file
-                generateTypeDeclaration(allExports, context);
+                generateTypeDeclaration(
+                  allExports,
+                  context,
+                  resolve(__dirname, 'dist/virtual-triggerkit.d.ts')
+                );
 
                 context.logger.log(`Found ${allExports.length} exportable functions and ${allEnvVars.size} environment variables`);
               } catch (error) {
