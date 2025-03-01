@@ -1,6 +1,6 @@
 {
   "name": "triggerkit",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "A plugin to connect SvelteKit functions to your trigger.dev tasks",
   "homepage": "https://github.com/EnoughXP/vite-plugin-triggerkit#readme",
   "keywords": [
