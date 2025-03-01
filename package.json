@@ -30,9 +30,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./virtual": {
-      "types": "./dist/virtual-triggerkit.d.ts"
     }
   },
   "engines": {
