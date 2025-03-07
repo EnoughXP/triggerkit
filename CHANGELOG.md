@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.4
+
+### Patch Changes
+
+- Improve importing of environment variables
+
 ## 1.5.3
 
 ### Patch Changes
