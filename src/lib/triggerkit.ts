@@ -23,7 +23,8 @@ function triggerkit(options?: PluginOptions): BuildExtension {
       constants: false,
       variables: false,
       ...options?.includeTypes
-    }
+    },
+    debugLevel: options?.debugLevel || "minimal"
   }
 
   // Keep track of file states for rebuilding
@@ -34,12 +35,16 @@ function triggerkit(options?: PluginOptions): BuildExtension {
     name: "triggerkit",
 
     onBuildStart: async (context) => {
-      context.logger.log("🚀 Triggerkit extension starting!");
-      context.logger.log("📋 Export strategy:", resolvedOptions.exportStrategy.mode);
-      context.logger.log("🎯 Include types:", Object.entries(resolvedOptions.includeTypes).filter(([_, v]) => v).map(([k, _]) => k).join(', '));
+      if (resolvedOptions.debugLevel !== "off") {
+        context.logger.log("🚀 Triggerkit extension starting!");
+      }
 
+      if (resolvedOptions.debugLevel === "verbose") {
+        context.logger.log("📋 Export strategy:", resolvedOptions.exportStrategy.mode);
+        context.logger.log("🎯 Include types:", Object.entries(resolvedOptions.includeTypes).filter(([_, v]) => v).map(([k, _]) => k).join(', '));
+      }
       // Load environment variables from SvelteKit's .env files
-      await loadSvelteKitEnvironment(context);
+      await loadSvelteKitEnvironment(context, resolvedOptions.debugLevel);
 
       // Clear the file cache to start fresh
       fileCache.clear();
@@ -51,7 +56,9 @@ function triggerkit(options?: PluginOptions): BuildExtension {
 
         // Check if the folder exists
         if (!fs.existsSync(dirPath)) {
-          context.logger.warn(`⚠️  Directory ${includeDir} does not exist, skipping`);
+          if (resolvedOptions.debugLevel !== "off") {
+            context.logger.warn(`⚠️  Directory ${includeDir} does not exist, skipping`);
+          }
           continue;
         }
         await scanFolderForEnvVars(
@@ -59,7 +66,8 @@ function triggerkit(options?: PluginOptions): BuildExtension {
           resolvedOptions.filePatterns,
           resolvedOptions.exclude,
           envVars,
-          context
+          context,
+          resolvedOptions.debugLevel
         );
 
         // Scan the folder recursively
@@ -73,26 +81,35 @@ function triggerkit(options?: PluginOptions): BuildExtension {
         );
       }
 
-      context.logger.log("📝 Files in cache:");
-      for (const [filePath, cachedFile] of fileCache.entries()) {
-        const exportedItems = extractExportedItems(cachedFile.content || '', resolvedOptions.includeTypes);
-        const exportNames = exportedItems.map(item => `${item.name}(${item.type})`);
-        context.logger.log(`  - ${filePath}: [${exportNames.join(', ')}]`);
+      // Debug: Log all cached files
+      if (resolvedOptions.debugLevel === "verbose") {
+        context.logger.log("📝 Files in cache:");
+        for (const [filePath, cachedFile] of fileCache.entries()) {
+          const exportedItems = extractExportedItems(cachedFile.content || '', resolvedOptions.includeTypes);
+          const exportNames = exportedItems.map(item => `${item.name}(${item.type})`);
+          context.logger.log(`  - ${filePath}: [${exportNames.join(', ')}]`);
+        }
       }
 
       // Only proceed if we have files to process
       if (fileCache.size === 0) {
-        context.logger.warn("❌ No export files found, triggerkit will not be active");
+        if (resolvedOptions.debugLevel !== "off") {
+          context.logger.warn("❌ No export files found, triggerkit will not be active");
+        }
         return;
       }
 
-      context.logger.log(`✅ Found ${fileCache.size} function files`);
+      if (resolvedOptions.debugLevel !== "off") {
+        context.logger.log(`✅ Found ${fileCache.size} export files`);
+      }
 
       // Create and register an esbuild plugin
       const triggerKitPlugin: Plugin = {
         name: 'virtual-triggerkit-module',
         setup(build) {
-          context.logger.log("🔧 Setting up triggerkit plugin");
+          if (resolvedOptions.debugLevel === "verbose") {
+            context.logger.log("🔧 Setting up esbuild plugin");
+          }
 
           // Enhance module resolution
           build.onResolve({ filter: /^src\// }, (args) => {
@@ -112,13 +129,20 @@ function triggerkit(options?: PluginOptions): BuildExtension {
           });
 
           // Handle requests for our virtual module
-          build.onResolve({ filter: /^virtual:triggerkit$/ }, () => {
+          build.onResolve({ filter: /^virtual:triggerkit$/ }, (args) => {
+            if (resolvedOptions.debugLevel === "verbose") {
+              context.logger.log("🎯 VIRTUAL MODULE REQUESTED!", args);
+            }
             if (fileCache.size === 0) {
-              context.logger.warn("❌ No function files found when resolving virtual module");
-              return { errors: [{ text: 'No function files found' }] };
+              if (resolvedOptions.debugLevel !== "off") {
+                context.logger.warn("❌ No export files found when resolving virtual module");
+              }
+              return { errors: [{ text: 'No export files found' }] };
             }
 
-            context.logger.log("✅ Resolving virtual:triggerkit module");
+            if (resolvedOptions.debugLevel === "verbose") {
+              context.logger.log("✅ Resolving virtual:triggerkit module");
+            }
             return {
               path: VIRTUAL_MODULE_ID,
               namespace: NAMESPACE
@@ -135,11 +159,15 @@ function triggerkit(options?: PluginOptions): BuildExtension {
 
           // Handle loading the virtual module
           build.onLoad({ filter: /.*/, namespace: NAMESPACE }, async () => {
-            context.logger.log("📦 LOADING VIRTUAL MODULE CONTENT");
+            if (resolvedOptions.debugLevel === "verbose") {
+              context.logger.log("📦 LOADING VIRTUAL MODULE CONTENT");
+            }
 
             if (fileCache.size === 0) {
-              context.logger.warn("❌ No function files found when loading virtual module");
-              return { errors: [{ text: 'No function files found' }] };
+              if (resolvedOptions.debugLevel !== "off") {
+                context.logger.warn("❌ No export files found when loading virtual module");
+              }
+              return { errors: [{ text: 'No export files found' }] };
             }
 
             // Generate virtual module content based on export strategy
@@ -149,6 +177,11 @@ function triggerkit(options?: PluginOptions): BuildExtension {
               resolvedOptions,
               context
             );
+
+            if (resolvedOptions.debugLevel === "verbose") {
+              context.logger.log("📝 Generated module content (first 500 chars):");
+              context.logger.log(moduleContent.substring(0, 500));
+            }
 
             return {
               contents: moduleContent,
@@ -443,7 +476,7 @@ function extractExportedItems(
   return exportedItems;
 }
 // Helper function to load SvelteKit environment variables
-async function loadSvelteKitEnvironment(context: any): Promise<void> {
+async function loadSvelteKitEnvironment(context: any, debugLevel: Required<PluginOptions>['debugLevel']): Promise<void> {
   const envFiles = [
     '.env',
     '.env.local',
@@ -459,9 +492,9 @@ async function loadSvelteKitEnvironment(context: any): Promise<void> {
       try {
         const envContent = fs.readFileSync(envPath, 'utf-8');
         const envVars = parseEnvFile(envContent);
-
-        context.logger.log(`🔍 Found ${Object.keys(envVars).length} variables in ${envFile}:`);
-
+        if (debugLevel === "verbose") {
+          context.logger.log(`🔍 Found ${Object.keys(envVars).length} variables in ${envFile}:`);
+        }
         // Set environment variables
         for (const [key, value] of Object.entries(envVars)) {
           if (!process.env[key]) {
@@ -473,28 +506,34 @@ async function loadSvelteKitEnvironment(context: any): Promise<void> {
           }
         }
 
-        context.logger.log(`🌍 Loaded ${Object.keys(envVars).length} environment variables from ${envFile}`);
+        if (debugLevel !== "off") {
+          context.logger.log(`🌍 Loaded ${Object.keys(envVars).length} environment variables from ${envFile}`);
+        }
       } catch (error) {
-        context.logger.warn(`⚠️  Could not load ${envFile}:`, error);
+        if (debugLevel !== "off") {
+          context.logger.warn(`⚠️  Could not load ${envFile}:`, error);
+        }
       }
-    } else {
+    } else if (debugLevel === "verbose") {
       context.logger.log(`📝 ${envFile} not found`);
     }
   }
 
   // Debug: Show specific variables we care about
-  const importantVars = ['PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_KEY'];
-  context.logger.log(`🔍 Checking important environment variables:`);
-  for (const varName of importantVars) {
-    const value = process.env[varName];
-    if (value) {
-      context.logger.log(`  ✅ ${varName} = ${value.substring(0, 20)}${value.length > 20 ? '...' : ''}`);
-    } else {
-      context.logger.log(`  ❌ ${varName} = undefined`);
+  if (debugLevel === "verbose") {
+    const importantVars = ['PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_KEY'];
+    context.logger.log(`🔍 Checking important environment variables:`);
+    for (const varName of importantVars) {
+      const value = process.env[varName];
+      if (value) {
+        context.logger.log(`  ✅ ${varName} = ${value.substring(0, 20)}${value.length > 20 ? '...' : ''}`);
+      } else {
+        context.logger.log(`  ❌ ${varName} = undefined`);
+      }
     }
-  }
 
-  context.logger.log(`📊 Total environment variables loaded: ${totalEnvVarsLoaded}`);
+    context.logger.log(`📊 Total environment variables loaded: ${totalEnvVarsLoaded}`);
+  }
 }
 // Helper function to parse .env file content
 function parseEnvFile(content: string): Record<string, string> {
@@ -607,7 +646,8 @@ async function scanFolderForEnvVars(
   filePatterns: string[],
   excludePatterns: string[],
   envVars: Set<string>,
-  context: any
+  context: any,
+  debugLevel: Required<PluginOptions>['debugLevel']
 ) {
   try {
     const files = await fs.promises.readdir(dirPath, { withFileTypes: true });
@@ -620,7 +660,7 @@ async function scanFolderForEnvVars(
 
       if (file.isDirectory()) {
         // Recursively scan subdirectories
-        await scanFolderForEnvVars(fullPath, filePatterns, excludePatterns, envVars, context);
+        await scanFolderForEnvVars(fullPath, filePatterns, excludePatterns, envVars, context, debugLevel);
       } else if (file.isFile() && filePatterns.some(ext => file.name.endsWith(ext))) {
         try {
           // Read file content
@@ -628,12 +668,16 @@ async function scanFolderForEnvVars(
           // Extract env vars
           extractEnvironmentVariables(content, envVars);
         } catch (error) {
-          context.logger.warn(`Error reading file: ${fullPath}`, error);
+          if (debugLevel !== "off") {
+            context.logger.warn(`Error reading file: ${fullPath}`, error);
+          }
         }
       }
     }
   } catch (error) {
-    context.logger.warn(`Error scanning dir for env vars: ${dirPath}`, error);
+    if (debugLevel !== "off") {
+      context.logger.warn(`Error scanning dir for env vars: ${dirPath}`, error);
+    }
   }
 }
 // Helper function to transform SvelteKit env imports to use process.env
@@ -903,9 +947,9 @@ function generateVirtualModuleContent(
   if (exportStrategy.mode === "individual") {
     return generateIndividualExports(filesByFolder, moduleContent);
   } else if (exportStrategy.mode === "grouped") {
-    return generateGroupedExports(filesByFolder, moduleContent, exportStrategy, context);
+    return generateGroupedExports(filesByFolder, moduleContent, exportStrategy);
   } else if (exportStrategy.mode === "mixed") {
-    return generateMixedExports(filesByFolder, moduleContent, exportStrategy, context);
+    return generateMixedExports(filesByFolder, moduleContent, exportStrategy);
   }
 
   return moduleContent;
@@ -913,8 +957,7 @@ function generateVirtualModuleContent(
 function generateGroupedExports(
   filesByFolder: Record<string, Map<string, FileWithExports>>,
   moduleContent: string,
-  strategy: NonNullable<Required<PluginOptions>["exportStrategy"]>,
-  context: any
+  strategy: NonNullable<Required<PluginOptions>["exportStrategy"]>
 ): string {
   const groups: Record<string, string[]> = {};
   const imports: string[] = [];
@@ -999,12 +1042,11 @@ function generateGroupedExports(
 function generateMixedExports(
   filesByFolder: Record<string, Map<string, FileWithExports>>,
   moduleContent: string,
-  strategy: NonNullable<Required<PluginOptions>["exportStrategy"]>,
-  context: any
+  strategy: NonNullable<Required<PluginOptions>["exportStrategy"]>
 ): string {
   // Generate both individual and grouped exports
   const individualContent = generateIndividualExports(filesByFolder, '');
-  const groupedContent = generateGroupedExports(filesByFolder, '', strategy, context);
+  const groupedContent = generateGroupedExports(filesByFolder, '', strategy);
 
   return moduleContent + individualContent + '\n// Additional grouped exports\n' + groupedContent.split('// Imports\n')[1];
 }

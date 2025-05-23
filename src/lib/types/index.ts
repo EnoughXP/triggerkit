@@ -50,6 +50,12 @@ export interface PluginOptions {
     constants?: boolean;
     variables?: boolean;
   };
+
+  /**
+ * Debug logging level
+ * @default "minimal"
+ */
+  debugLevel?: "minimal" | "verbose" | "off";
 }
 
 export interface CachedFile {
