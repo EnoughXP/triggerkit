@@ -1,5 +1,307 @@
 # Changelog
 
+## 2.0.0
+
+### Major Changes
+
+- Changeset Summary: Major Feature Release v2.0.0
+
+  🎉 Overview
+
+  This release represents a major enhancement to Triggerkit with new features for
+  **class support**, **flexible export organization**, **enhanced TypeScript
+  support**, and **improved developer experience**.
+
+  ***
+
+  ✨ New Features
+
+  🏗️ **Class Support**
+
+  - **Added full TypeScript class support** with method and property detection
+  - **Constructor parameter extraction** for proper type declarations
+  - **Static method and property support**
+  - **Inheritance and interface implementation detection**
+  - **Generated TypeScript declarations** preserve class structure
+
+  ```typescript
+  // Now supported!
+  export class UserService {
+  	constructor(private apiKey: string) {}
+  	async getUser(id: string): Promise<User> {
+  		/* ... */
+  	}
+  	static validateEmail(email: string): boolean {
+  		/* ... */
+  	}
+  }
+  ```
+
+  📁 **Flexible Export Organization**
+
+  - **New export strategies**: `individual` (default), `grouped`, `mixed`
+  - **Group by file, folder, or custom logic**
+  - **Configurable group prefixes** for namespace organization
+  - **Backwards compatibility** - individual exports always available
+
+  ```typescript
+  // Grouped exports
+  import { api_auth, api_users } from 'virtual:triggerkit';
+  api_auth.login(credentials);
+
+  // Individual exports still work
+  import { getUser, login } from 'virtual:triggerkit';
+  ```
+
+  🎛️ **Debug Levels**
+
+  - **Three debug levels**: `minimal` (default), `verbose`, `off`
+  - **Clean development experience** with minimal logging
+  - **Detailed debugging** when needed
+  - **Silent mode** for production builds
+
+  🔍 **Enhanced TypeScript Support**
+
+  - **Preserves generic types** and complex function signatures
+  - **Method signature extraction** with full parameter and return types
+  - **Enhanced type declarations** generated automatically
+  - **Better IntelliSense** support in IDEs
+
+  ⚙️ **Configurable Export Types**
+
+  - **Control what gets exported**: functions, classes, constants, variables
+  - **Fine-grained inclusion control**
+  - **Performance optimization** by excluding unnecessary exports
+
+  ***
+
+  🛠️ **API Changes**
+
+  **New Configuration Options**
+
+  ```typescript
+  interface PluginOptions {
+  	// Existing options remain unchanged
+  	includeDirs?: string[];
+  	filePatterns?: string[];
+  	exclude?: string[];
+
+  	// NEW: Export organization
+  	exportStrategy?: {
+  		mode: 'individual' | 'grouped' | 'mixed';
+  		groupBy?: 'file' | 'folder' | 'custom';
+  		groupingFunction?: (filePath: string, exportName: string) => string;
+  		groupPrefix?: string;
+  	};
+
+  	// NEW: Export type control
+  	includeTypes?: {
+  		functions?: boolean;
+  		classes?: boolean;
+  		constants?: boolean;
+  		variables?: boolean;
+  	};
+
+  	// NEW: Debug control
+  	debugLevel?: 'minimal' | 'verbose' | 'off';
+  }
+  ```
+
+  **Enhanced Export Interface**
+
+  ```typescript
+  // NEW: Enhanced export item structure
+  interface ExportedItem {
+  	name: string;
+  	type: 'function' | 'class' | 'const' | 'variable';
+  	signature: string;
+  	isAsync: boolean;
+  	returnType: string;
+  	params: string;
+  	classInfo?: {
+  		methods: Array<{ name: string; signature: string; isStatic: boolean }>;
+  		properties: Array<{ name: string; type: string; isStatic: boolean }>;
+  		constructor?: { params: string };
+  	};
+  }
+  ```
+
+  ***
+
+  🔧 **Internal Improvements**
+
+  **Code Architecture**
+
+  - **Unified export detection** - single function handles all export types
+  - **Modular generation** - separate functions for different export strategies
+  - **Enhanced regex patterns** for better detection accuracy
+  - **Improved error handling** with debug-level-aware logging
+
+  **Performance Optimizations**
+
+  - **Selective scanning** based on `includeTypes` configuration
+  - **Efficient caching** with type-aware invalidation
+  - **Reduced logging overhead** in production mode
+  - **Optimized TypeScript declaration generation**
+
+  **Type Safety**
+
+  - **Fixed TypeScript errors** in class info initialization
+  - **Stronger type definitions** throughout codebase
+  - **Better generic type handling**
+  - **Enhanced interface definitions**
+
+  ***
+
+  📝 **Generated Code Changes**
+
+  **Virtual Module Output**
+
+  ```typescript
+  // NEW: Grouped exports (when enabled)
+  export const api_auth = {
+  	login,
+  	logout,
+  	validateToken
+  };
+
+  // NEW: Class exports with full typing
+  export declare class UserService {
+  	constructor(apiKey: string);
+  	getUser(id: string): Promise<User>;
+  	static validateEmail(email: string): boolean;
+  }
+
+  // ENHANCED: Better function type preservation
+  export declare function processData<T extends DataType>(
+  	data: T,
+  	options: ProcessOptions
+  ): Promise<ProcessedData<T>>;
+  ```
+
+  **TypeScript Declarations**
+
+  - **Enhanced .d.ts generation** with class support
+  - **Preserved generic constraints** and complex types
+  - **Grouped export type definitions**
+  - **Environment variable exports** with string typing
+
+  ***
+
+  🚀 **Migration Guide**
+
+  **For Existing Users**
+
+  - ✅ **Zero breaking changes** - all existing code continues to work
+  - ✅ **Default behavior unchanged** - `individual` export mode by default
+  - ✅ **Backwards compatible** - existing imports work as before
+  - ✅ **Opt-in features** - new features require explicit configuration
+
+  **Recommended Upgrades**
+
+  ```typescript
+  // Before (still works)
+  triggerkit({
+  	includeDirs: ['src/lib/server']
+  });
+
+  // After (enhanced)
+  triggerkit({
+  	includeDirs: ['src/lib/server'],
+  	includeTypes: { functions: true, classes: true },
+  	exportStrategy: { mode: 'grouped', groupBy: 'folder' },
+  	debugLevel: 'minimal'
+  });
+  ```
+
+  ***
+
+  🐛 **Bug Fixes**
+
+  - **Fixed TypeScript compilation errors** in class info initialization
+  - **Improved function detection accuracy** with enhanced regex patterns
+  - **Better error handling** for malformed export statements
+  - **Resolved edge cases** in environment variable transformation
+  - **Fixed duplicate export detection** in mixed scenarios
+
+  ***
+
+  📖 **Documentation Updates**
+
+  - **Comprehensive README rewrite** with all new features
+  - **Configuration examples** for different use cases
+  - **Migration guide** for existing users
+  - **TypeScript examples** showcasing enhanced support
+  - **Debug level documentation** for different development phases
+
+  ***
+
+  🎯 **Developer Experience Improvements**
+
+  **Better Logging**
+
+  - **Contextual debug messages** based on selected level
+  - **Clear progress indicators** during build process
+  - **Detailed error reporting** when issues occur
+  - **Performance metrics** in verbose mode
+
+  **Enhanced IDE Support**
+
+  - **Richer IntelliSense** with preserved type information
+  - **Better autocomplete** for class methods and properties
+  - **Accurate type checking** for complex generic functions
+  - **Improved error messages** during development
+
+  ***
+
+  🧪 **Testing & Quality**
+
+  **Enhanced Detection**
+
+  - **Comprehensive export pattern testing** across different syntax styles
+  - **Class hierarchy detection** with inheritance and interfaces
+  - **Generic type preservation** validation
+  - **Environment variable transformation** verification
+
+  **Type Safety**
+
+  - **Eliminated TypeScript compilation warnings**
+  - **Stronger interface definitions**
+  - **Better error type handling**
+  - **Enhanced parameter validation**
+
+  ***
+
+  📊 **Impact Summary**
+
+  | Category               | Changes                           |
+  | ---------------------- | --------------------------------- |
+  | **New Features**       | 5 major features added            |
+  | **API Extensions**     | 3 new configuration sections      |
+  | **TypeScript Support** | Significantly enhanced            |
+  | **Breaking Changes**   | None - fully backwards compatible |
+  | **Performance**        | Improved with selective scanning  |
+  | **Documentation**      | Complete rewrite with examples    |
+
+  ***
+
+  🚀 **What's Next**
+
+  This release establishes Triggerkit as a comprehensive SvelteKit-to-Trigger.dev
+  integration solution. Future releases will focus on:
+
+  - **Additional export strategies** based on user feedback
+  - **Enhanced error reporting** and debugging tools
+  - **Performance optimizations** for large codebases
+  - **Extended IDE integration** features
+
+  ***
+
+  **Release Type**: Major (v2.0.0)\
+  **Backwards Compatibility**: ✅ Full\
+  **Migration Required**: ❌ None\
+  **Recommended**: ✅ Highly recommended for all users
+
 ## 1.5.4
 
 ### Patch Changes
