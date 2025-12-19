@@ -49,7 +49,7 @@ export default defineConfig({
 });
 ```
 
-2. Write your SvelteKit Code (No Changes Needed1)
+2. Write your SvelteKit Code (No Changes Needed!)
 
 ```typescript
 // src/lib/server/email.ts
