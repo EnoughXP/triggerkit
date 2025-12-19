@@ -196,7 +196,7 @@ function triggerkit(options?: PluginOptions): BuildExtension {
       context.logger.log("✅ Plugin registered");
 
       // Generate type declarations
-      generateFunctionTypeDeclarations(context, fileCache);
+      generateFunctionTypeDeclarations(context, fileCache, resolvedOptions.includeTypes);
 
       // Add function files as a layer to ensure they're included in the build
       const layerFiles: Record<string, string> = {};
@@ -330,11 +330,37 @@ function extractExportedItems(
       const implementsClause = match[4] ? match[4].trim() : '';
 
       // Extract class body to find methods and properties
-      const classBodyRegex = new RegExp(
-        `export\\s+(?:abstract\\s+)?class\\s+${className}[^{]*\\{([^}]*)\\}`,
-        's'
+      // We need to manually extract the class body by counting braces
+      const classStartRegex = new RegExp(
+        `export\\s+(?:abstract\\s+)?class\\s+${className}[^{]*\\{`
       );
-      const classBodyMatch = classBodyRegex.exec(content);
+      const classStartMatch = classStartRegex.exec(content);
+
+      let classBody = '';
+      if (classStartMatch) {
+        const startIndex = classStartMatch.index + classStartMatch[0].length;
+        let braceCount = 1;
+        let currentIndex = startIndex;
+
+        while (braceCount > 0 && currentIndex < content.length) {
+          const char = content[currentIndex];
+          if (char === '{') braceCount++;
+          if (char === '}') braceCount--;
+
+          if (braceCount > 0) {
+            classBody += char;
+          }
+          currentIndex++;
+        }
+      }
+
+      // Remove comments from class body to avoid extracting code in comments
+      if (classBody) {
+        // Remove single-line comments
+        classBody = classBody.replace(/\/\/.*$/gm, '');
+        // Remove multi-line comments
+        classBody = classBody.replace(/\/\*[\s\S]*?\*\//g, '');
+      }
 
       let classInfo: {
         methods: Array<{ name: string; signature: string; isStatic: boolean }>;
@@ -346,8 +372,7 @@ function extractExportedItems(
         constructor: undefined
       };
 
-      if (classBodyMatch) {
-        const classBody = classBodyMatch[1];
+      if (classBody) {
 
         // Extract constructor
         const constructorMatch = classBody.match(/constructor\s*\(([^)]*)\)/);
@@ -355,21 +380,30 @@ function extractExportedItems(
           classInfo.constructor = { params: constructorMatch[1] };
         }
 
-        // Extract methods
-        const methodRegex = /(static\s+)?(async\s+)?([a-zA-Z0-9_$]+)\s*(\<[^>]*\>)?\s*\(([^)]*)\)(?:\s*:\s*([^{;]+))?/g;
+        // Extract methods by removing method bodies first
+        // Strategy: Remove everything between { } for each method, leaving only signatures
+        let classBodyForParsing = classBody;
+
+        // Remove method bodies by finding each method and removing its body
+        // First, let's find method declarations and extract just the signatures
+        const methodSignatureRegex = /^\s{2,4}(static\s+)?(async\s+)?([a-zA-Z0-9_$]+)\s*\(([^)]*)\)(?:\s*:\s*([^\{]+))?\s*\{/gm;
         let methodMatch;
-        while ((methodMatch = methodRegex.exec(classBody)) !== null) {
+
+        while ((methodMatch = methodSignatureRegex.exec(classBody)) !== null) {
+          const fullMatch = methodMatch[0];
           const isStatic = !!methodMatch[1];
           const isAsync = !!methodMatch[2];
           const methodName = methodMatch[3];
-          const methodGenerics = methodMatch[4] || '';
-          const methodParams = methodMatch[5] || '';
-          const methodReturnType = methodMatch[6] ? methodMatch[6].trim() : 'any';
+          const methodParams = methodMatch[4] || '';
+          let methodReturnType = methodMatch[5] ? methodMatch[5].trim() : (isAsync ? 'Promise<any>' : 'any');
 
           // Skip constructor (already handled)
           if (methodName === 'constructor') continue;
 
-          const methodSignature = `${isStatic ? 'static ' : ''}${isAsync ? 'async ' : ''}${methodName}${methodGenerics}(${methodParams}): ${methodReturnType}`;
+          // Skip if already added
+          if (classInfo.methods.some(m => m.name === methodName)) continue;
+
+          const methodSignature = `${isStatic ? 'static ' : ''}${isAsync ? 'async ' : ''}${methodName}(${methodParams}): ${methodReturnType}`;
 
           classInfo.methods.push({
             name: methodName,
@@ -378,8 +412,8 @@ function extractExportedItems(
           });
         }
 
-        // Extract properties
-        const propertyRegex = /(static\s+)?(readonly\s+)?([a-zA-Z0-9_$]+)\s*:\s*([^;=]+)/g;
+        // Extract properties - only match at class level (2-4 spaces indentation, ending with semicolon or =)
+        const propertyRegex = /^\s{2,4}(static\s+)?(readonly\s+)?([a-zA-Z0-9_$]+)\s*:\s*([^;=]+)[;=]/gm;
         let propertyMatch;
         while ((propertyMatch = propertyRegex.exec(classBody)) !== null) {
           const isStatic = !!propertyMatch[1];
@@ -1098,7 +1132,13 @@ function generateIndividualExports(
 // Enhanced type declaration generation
 function generateFunctionTypeDeclarations(
   context: any,
-  fileCache: Map<string, CachedFile>
+  fileCache: Map<string, CachedFile>,
+  includeTypes: Required<PluginOptions>['includeTypes'] = {
+    functions: true,
+    classes: true,
+    constants: false,
+    variables: false
+  }
 ): void {
   try {
     // Build the declaration content
@@ -1129,7 +1169,7 @@ function generateFunctionTypeDeclarations(
 
     // Process each folder
     for (const [folder, filePaths] of Object.entries(filesByFolder)) {
-      declarationContent += `  // Functions from ${folder}\n`;
+      declarationContent += `  // Exports from ${folder}\n`;
 
       // Process each file in the folder
       for (const filePath of filePaths) {
@@ -1139,26 +1179,51 @@ function generateFunctionTypeDeclarations(
         const content = cachedFile.content;
         const fileName = path.basename(filePath);
 
-        // Extract function signatures with full type information
-        const functionSignatures = extractFunctionSignatures(content);
+        // Extract all exported items (functions, classes, etc.)
+        const exportedItems = extractExportedItems(content, includeTypes);
 
-        if (functionSignatures.length > 0) {
+        if (exportedItems.length > 0) {
           declarationContent += `  // From ${fileName}\n`;
 
-          for (const func of functionSignatures) {
-            // Generate proper export declaration based on signature type
-            if (func.signature.startsWith('function')) {
-              declarationContent += `  export ${func.signature};\n`;
-            } else if (func.signature.startsWith('const')) {
-              // Convert const signature to export declaration
-              const funcDeclaration = func.signature.replace(/^const\s+(\w+):\s*/, 'export declare const $1: ');
-              declarationContent += `  ${funcDeclaration};\n`;
-            } else {
-              // Fallback to basic function declaration
-              declarationContent += `  export declare function ${func.name}(${func.params}): ${func.returnType};\n`;
-            }
+          for (const item of exportedItems) {
+            if (item.type === 'function') {
+              // Generate proper export declaration based on signature type
+              if (item.signature.startsWith('function')) {
+                declarationContent += `  export ${item.signature};\n`;
+              } else if (item.signature.startsWith('const')) {
+                // Convert const signature to export declaration
+                const funcDeclaration = item.signature.replace(/^const\s+(\w+):\s*/, 'export declare const $1: ');
+                declarationContent += `  ${funcDeclaration};\n`;
+              } else {
+                // Fallback to basic function declaration
+                declarationContent += `  export declare function ${item.name}(${item.params}): ${item.returnType};\n`;
+              }
 
-            allFunctionNames.push(func.name);
+              allFunctionNames.push(item.name);
+            } else if (item.type === 'class' && item.classInfo) {
+              // Generate class declaration
+              declarationContent += `  export declare ${item.signature} {\n`;
+
+              // Add constructor if present
+              if (item.classInfo.constructor) {
+                declarationContent += `    constructor(${item.classInfo.constructor.params});\n`;
+              }
+
+              // Add properties
+              for (const prop of item.classInfo.properties) {
+                declarationContent += `    ${prop.isStatic ? 'static ' : ''}${prop.name}: ${prop.type};\n`;
+              }
+
+              // Add methods
+              for (const method of item.classInfo.methods) {
+                declarationContent += `    ${method.signature};\n`;
+              }
+
+              declarationContent += `  }\n`;
+            } else if (item.type === 'const') {
+              // Handle constants
+              declarationContent += `  export declare ${item.signature};\n`;
+            }
           }
 
           declarationContent += '\n';
